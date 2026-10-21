@@ -59,12 +59,14 @@ test("cross-site QR commands are still rejected", () => {
   assert.equal(status, 403);
   assert.equal(passed, false);
 });
-test("MTProto QR uses a numeric API_ID and independent 32-character Telegram API_HASH", () => {
-  assert.deepEqual(validateTelegramApiCredentials("123456", "a".repeat(32)), {
+test("MTProto QR keeps API_HASH opaque and validates numeric API_ID", () => {
+  const validHash = "api-hash-from-telegram";
+  assert.deepEqual(validateTelegramApiCredentials("123456", validHash), {
     apiId: 123456,
-    apiHash: "a".repeat(32),
+    apiHash: validHash,
   });
   assert.throws(() => validateTelegramApiCredentials("BOT_TOKEN", "a".repeat(32)), /API_ID/);
-  assert.throws(() => validateTelegramApiCredentials("123456", "bot-token"), /API_HASH/);
+  assert.throws(() => validateTelegramApiCredentials("123456", ""), /API_HASH/);
+  assert.throws(() => validateTelegramApiCredentials("123456", "1234567890:abcdefghijklmnopqrstuvwxyz"), /BOT_TOKEN/);
   assert.throws(() => validateTelegramApiCredentials(undefined, undefined), /API_ID/);
 });

@@ -4,8 +4,9 @@ export function validateTelegramApiCredentials(apiIdValue: string | undefined, a
     throw new Error("API_ID غير مضبوط: أدخل رقم التطبيق (App api_id) من my.telegram.org، وليس اسم الحقل أو BOT_TOKEN");
   }
   const normalizedHash = apiHashValue?.trim() ?? "";
-  if (!/^[0-9a-f]{32}$/i.test(normalizedHash)) {
-    throw new Error("API_HASH غير مضبوط: أدخل قيمة api_hash المكونة من 32 خانة سداسية من my.telegram.org، وليس BOT_TOKEN");
-  }
+  if (!normalizedHash) throw new Error("API_HASH_MISSING: أضف قيمة api_hash للتطبيق من my.telegram.org");
+  if (/^\d+:[A-Za-z0-9_-]{20,}$/.test(normalizedHash)) throw new Error("API_HASH_IS_BOT_TOKEN: لا تضع BOT_TOKEN في خانة API_HASH");
+  if (normalizedHash.length > 128) throw new Error("API_HASH_INVALID_LENGTH: قيمة API_HASH أطول من المتوقع");
+  if (/[\u0000-\u0020\u007f]/.test(normalizedHash)) throw new Error("API_HASH_HAS_WHITESPACE: أزل المسافات أو الأسطر من API_HASH");
   return { apiId: Number(normalizedId), apiHash: normalizedHash };
 }
