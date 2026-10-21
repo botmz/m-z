@@ -5,6 +5,7 @@ import { Logger, LogLevel } from "teleproto/extensions/Logger.js";
 import { encrypt, decrypt } from "./auth";
 import { pool, getSetting, setSetting, audit, safeError, channelRow, type Channel } from "./store";
 import { acceptsMessage } from "./composition";
+import { validateTelegramApiCredentials } from "./telegram-api-credentials";
 
 let client: TelegramClient | undefined;
 let starting: Promise<void> | undefined;
@@ -17,9 +18,8 @@ const messageFilter = new NewMessage({});
 export const readerState = { status: "not_authorized", detail: "يلزم تفويض جلسة MTProto لقراءة المصادر العامة", checkedAt: null as string | null };
 export const qrState = { status: "idle", message: "ابدأ تفويض Telegram باستخدام رمز QR", url: null as string | null, expiresAt: null as string | null };
 function newClient(session = "") {
-  const apiId = Number(process.env.API_ID);
-  if (!Number.isSafeInteger(apiId) || apiId <= 0 || !process.env.API_HASH) throw new Error("تحقق من API_ID و API_HASH في الأسرار");
-  return new TelegramClient(new StringSession(session), apiId, process.env.API_HASH, {
+  const { apiId, apiHash } = validateTelegramApiCredentials(process.env.API_ID, process.env.API_HASH);
+  return new TelegramClient(new StringSession(session), apiId, apiHash, {
     connectionRetries: 5, retryDelay: 2000, autoReconnect: true, baseLogger: new Logger(LogLevel.NONE),
     floodSleepThreshold: 0,
   });
@@ -74,7 +74,8 @@ export async function beginQr() {
       await Promise.race([qrClient.connect(), connectionDeadline]);
       clearTimeout(connectionTimeout);
       if (abort.signal.aborted) throw new Error("انتهت مهلة الربط؛ اضغط رمز جديد");
-      await qrClient.signInUserWithQrCode({ apiId: Number(process.env.API_ID), apiHash: process.env.API_HASH! }, {
+      const credentials = validateTelegramApiCredentials(process.env.API_ID, process.env.API_HASH);
+      await qrClient.signInUserWithQrCode(credentials, {
         abortSignal: abort.signal,
         qrCode: async ({ token, expires }) => {
           if (abort.signal.aborted || generation !== qrGeneration) throw new Error("انتهت مهلة تفويض QR، ابدأ من جديد");
@@ -101,8 +102,8 @@ export async function beginQr() {
       if (generation !== qrGeneration) return;
       if (qrState.status !== "needs_2fa") {
         const raw = e instanceof Error ? e.message : "";
-        const message = /API_ID_INVALID|API_HASH_INVALID|API_ID_PUBLISHED_FLOOD/.test(raw)
-          ? "بيانات تطبيق Telegram غير صالحة. حدّث API_ID وAPI_HASH من my.telegram.org في الأسرار ثم أعد تشغيل الخادم."
+        const message = /API_ID غير مضبوط|API_HASH غير مضبوط|API_ID_INVALID|API_HASH_INVALID|API_ID_PUBLISHED_FLOOD/.test(raw)
+          ? safeError(e)
           : abort.signal.aborted ? "انتهت مهلة الربط أو تعذر الاتصال بخوادم Telegram. اضغط رمز جديد للمحاولة مرة أخرى."
           : safeError(e);
         Object.assign(qrState, { status: abort.signal.aborted ? "expired" : "error", message, url: null, expiresAt: null });

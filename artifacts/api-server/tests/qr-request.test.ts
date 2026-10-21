@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { customFetch } from "../../../lib/api-client-react/src/custom-fetch";
 import { sameOrigin } from "../src/lib/auth";
+import { validateTelegramApiCredentials } from "../src/lib/telegram-api-credentials";
 import type { Request, Response } from "express";
 
 test("bodyless MZ commands send JSON accepted by the unchanged CSRF guard", async () => {
@@ -57,4 +58,13 @@ test("cross-site QR commands are still rejected", () => {
   sameOrigin(req, res, () => { passed = true; });
   assert.equal(status, 403);
   assert.equal(passed, false);
+});
+test("MTProto QR uses a numeric API_ID and independent 32-character Telegram API_HASH", () => {
+  assert.deepEqual(validateTelegramApiCredentials("123456", "a".repeat(32)), {
+    apiId: 123456,
+    apiHash: "a".repeat(32),
+  });
+  assert.throws(() => validateTelegramApiCredentials("BOT_TOKEN", "a".repeat(32)), /API_ID/);
+  assert.throws(() => validateTelegramApiCredentials("123456", "bot-token"), /API_HASH/);
+  assert.throws(() => validateTelegramApiCredentials(undefined, undefined), /API_ID/);
 });
