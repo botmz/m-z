@@ -337,6 +337,14 @@ export async function customFetch<T = unknown>(
 
   const headers = mergeHeaders(isRequest(input) ? input.headers : undefined, headersInit);
 
+  // MZ command endpoints have no input fields, but the administrative CSRF
+  // guard deliberately requires a JSON request even for these POST actions.
+  if (method === "POST" && resolveUrl(input).startsWith("/api/mz/") &&
+      init.body == null && !isRequest(input)) {
+    init.body = "{}";
+    if (!headers.has("content-type")) headers.set("content-type", "application/json");
+  }
+
   if (
     typeof init.body === "string" &&
     !headers.has("content-type") &&

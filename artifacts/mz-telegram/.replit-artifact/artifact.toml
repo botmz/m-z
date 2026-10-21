@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "MZ Telegram Bots"
+description = "منصة عربية آمنة لمالك واحد لإدارة نقل رسائل Telegram من المصادر إلى قنوات النشر مع الترجمة والأسعار وسجل المعالجة."
+version = "1.0.0"
+id = "artifacts/mz-telegram"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 19428
+
+[services.development]
+run = "pnpm --filter @workspace/mz-telegram run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/mz-telegram", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/mz-telegram/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "19428"
+BASE_PATH = "/"

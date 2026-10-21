@@ -1,45 +1,45 @@
-# [Project name]
+# MZ Telegram Bots
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+منصة عربية RTL لمالك واحد لإدارة نقل رسائل قنوات Telegram العامة إلى قنوات نشره مع ترجمة وأسعار اختيارية لكل قناة.
+
+## قواعد المنتج
+
+- الأولوية وفق طلب المالك: الأمان، الاستقرار، منع تكرار الرسائل، التحكم المستقل بكل قناة، والعمل في الخلفية.
+- واجهة عربية بالكامل بهوية MZ بالأسود والذهبي، وضعان ليلي ونهاري، واستجابة للهاتف.
+- دخول بكلمة مرور لمالك واحد فقط؛ لا تسجيل حسابات أو بريد أو تسجيل اجتماعي. طلب المالك صراحة هذا النوع من المصادقة.
+- لا بيانات تجريبية توحي بأنها حقيقية، ولا حالة اتصال أو إرسال ناجح دون تحقق.
+- لا نطلب كلمة مرور حساب Telegram في لوحة التحكم. تفويض QR أو أداة محلية خاصة للمالك.
+- لا تجاوز للمحتوى المحمي أو المصادر الخاصة. أول تفعيل لمصدر يبدأ بالرسائل الجديدة، لا الأرشيف.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- `pnpm run typecheck`
+- `pnpm --filter @workspace/api-server run test`
+- `pnpm --filter @workspace/api-spec run codegen`
+- `pnpm --filter @workspace/db run push` — تطوير فقط؛ النشر يدير مخطط إنتاج Replit.
+- الخدمات تستخدم Workflows المهيأة، PORT وBASE_PATH تلقائيان؛ لا تبدأ نسخة ثانية.
+- README.md دليل الإعداد والتشغيل والنشر والاستعادة وحدود التكامل الفعلي.
 
-## Stack
+## البنية
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- `artifacts/mz-telegram`: React/Vite، واجهة عربية تحت `/`.
+- `artifacts/api-server`: Express API تحت `/api` وعامل المعالجة ووحدات Telegram والترجمة والأسعار.
+- `lib/api-spec/openapi.yaml`: العقد؛ شغّل codegen بعد تعديله.
+- `lib/db/src/schema`: مخطط PostgreSQL؛ `lib/db/drizzle`: SQL مرجعي.
+- `artifacts/api-server/tests`: اختبارات الوحدة والقيود؛ بيانات الاختبار داخل معاملات ملغاة.
 
-## Where things live
+## قرارات التشغيل
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- PostgreSQL طابور دائم بدلاً من إضافة Redis: يحافظ على الرسائل والقيود والأقفال في مخزن واحد.
+- قفل قيادة العامل يمنع المعالجة المتزامنة من نسخ API المتصلة بنفس قاعدة البيانات.
+- الحالات غير المؤكدة بعد انقطاع الإرسال لا تعاد تلقائياً: Telegram Bot API لا يضمن idempotency، ومنع التكرار أولى من إعادة إرسال محتمل.
+- العامل وخدمة الأسعار وحدات خلفية مستمرة داخل عملية API، ومستقلتان عن الواجهة والمتصفح.
+- بيانات Telegram الحساسة مشفرة بخادم AES-256-GCM؛ الأسرار في Secrets فقط.
+- الترجمة معطلة افتراضياً لتجنب إنفاق غير مقصود. Replit AI يُحاسب من الأرصدة عند التفعيل.
+- التطوير والإنتاج قاعدتان منفصلتان؛ لا تُشغّل النسخ على الحساب والوجهات نفسها معاً.
 
-## Architecture decisions
+## قيود التشغيل الحي
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
-
-## Product
-
-_Describe the high-level user-facing capabilities of this app once they exist._
-
-## User preferences
-
-_Populate as you build — explicit user instructions worth remembering across sessions._
-
-## Gotchas
-
-_Populate as you build — sharp edges, "always run X before Y" rules._
-
-## Pointers
-
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+- التحقق النهائي من الاستقبال والنشر يتطلب BOT_TOKEN صالحاً وتفويض MTProto ومصادر ووجهات يختارها المالك.
+- التشغيل الدائم يحتاج استضافة دائمة مثل Reserved VM، لا الاعتماد على المتصفح أو بيئة التطوير.
+- لا تُحدّث أسعار منشورات سابقة. Telegram لا يدعم ألوان نص عشوائية للأسهم.

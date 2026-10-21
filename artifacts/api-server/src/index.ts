@@ -1,5 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { initializeAdmin } from "./lib/auth";
+import { startWorker, stopWorker } from "./lib/worker";
 
 const rawPort = process.env["PORT"];
 
@@ -15,11 +17,16 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-app.listen(port, (err) => {
+await initializeAdmin();
+const server = app.listen(port, (err) => {
   if (err) {
     logger.error({ err }, "Error listening on port");
     process.exit(1);
   }
 
   logger.info({ port }, "Server listening");
+  startWorker();
+});
+process.on("SIGTERM", () => {
+  void stopWorker().finally(() => server.close(() => process.exit(0)));
 });

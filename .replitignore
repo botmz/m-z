@@ -3,3 +3,9 @@
 
 # No need to store the pnpm store twice.
 .local
+/generated-artifacts/
+.env
+.env.*
+!.env.example
+*.session
+*.session-journal

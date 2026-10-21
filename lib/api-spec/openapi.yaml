@@ -1,36 +1,484 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
-  version: 0.1.0
-  description: API specification
+  version: 1.0.0
 servers:
   - url: /api
-    description: Base API path
-tags:
-  - name: health
-    description: Health operations
 paths:
   /healthz:
     get:
       operationId: healthCheck
-      tags: [health]
-      summary: Health check
-      description: Returns server health status
       responses:
-        "200":
+        '200':
           description: Healthy
           content:
             application/json:
+              schema: { $ref: '#/components/schemas/HealthStatus' }
+  /mz/auth:
+    get:
+      operationId: getAuth
+      responses:
+        '200':
+          description: Session
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthState' }
+    post:
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PasswordInput' }
+      responses:
+        '200':
+          description: Signed in
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthState' }
+    delete:
+      operationId: logout
+      responses:
+        '200':
+          description: Signed out
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActionResult' }
+  /mz/password:
+    post:
+      operationId: changePassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PasswordChange' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActionResult' }
+  /mz/dashboard:
+    get:
+      operationId: getDashboard
+      responses:
+        '200':
+          description: Live summary
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Dashboard' }
+  /mz/channels:
+    get:
+      operationId: getChannels
+      responses:
+        '200':
+          description: Channels
+          content:
+            application/json:
               schema:
-                $ref: "#/components/schemas/HealthStatus"
+                type: array
+                items: { $ref: '#/components/schemas/Channel' }
+    post:
+      operationId: createChannel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChannelInput' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Channel' }
+  /mz/channels/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    put:
+      operationId: updateChannel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChannelInput' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Channel' }
+    delete:
+      operationId: deleteChannel
+      responses:
+        '200':
+          description: Deleted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActionResult' }
+  /mz/channels/{id}/test:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    post:
+      operationId: testChannel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TestInput' }
+      responses:
+        '200':
+          description: Actual permissions
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActionResult' }
+  /mz/routing:
+    get:
+      operationId: getRouting
+      responses:
+        '200':
+          description: Routing rules
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/RoutingRule' }
+    put:
+      operationId: saveRouting
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RoutingInput' }
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActionResult' }
+  /mz/messages:
+    get:
+      operationId: getMessages
+      parameters:
+        - { name: search, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string } }
+        - { name: channelId, in: query, schema: { type: integer } }
+      responses:
+        '200':
+          description: Delivery history
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/MessageRecord' }
+  /mz/messages/{id}/retry:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    post:
+      operationId: retryMessage
+      responses:
+        '200':
+          description: Queued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActionResult' }
+  /mz/logs:
+    get:
+      operationId: getLogs
+      parameters:
+        - { name: search, in: query, schema: { type: string } }
+        - { name: level, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Audit events
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/LogEntry' }
+  /mz/settings:
+    get:
+      operationId: getSettings
+      responses:
+        '200':
+          description: Safe settings without secrets
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Settings' }
+    put:
+      operationId: saveSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Settings' }
+      responses:
+        '200':
+          description: Saved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Settings' }
+  /mz/market:
+    get:
+      operationId: getMarket
+      responses:
+        '200':
+          description: Actual cached quotes
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/MarketQuote' }
+    post:
+      operationId: refreshMarket
+      responses:
+        '200':
+          description: Quote refresh report
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActionResult' }
+  /mz/services:
+    get:
+      operationId: getServices
+      responses:
+        '200':
+          description: Service status
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ServiceState' }
+  /mz/control:
+    post:
+      operationId: controlWorker
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ControlInput' }
+      responses:
+        '200':
+          description: Control result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActionResult' }
+  /mz/preview:
+    post:
+      operationId: previewMessage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PreviewInput' }
+      responses:
+        '200':
+          description: Composed message, never sent
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PreviewResult' }
+  /mz/telegram/qr:
+    post:
+      operationId: beginTelegramQr
+      responses:
+        '200':
+          description: Scan with official Telegram app
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QrState' }
+    get:
+      operationId: getTelegramQr
+      responses:
+        '200':
+          description: Current login state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QrState' }
 components:
   schemas:
     HealthStatus:
       type: object
+      required: [status]
       properties:
-        status:
-          type: string
-      required:
-        - status
-
+        status: { type: string }
+    AuthState:
+      type: object
+      required: [authenticated, configured]
+      properties:
+        authenticated: { type: boolean }
+        configured: { type: boolean }
+    PasswordInput:
+      type: object
+      required: [password]
+      properties:
+        password: { type: string, minLength: 1, maxLength: 200 }
+    PasswordChange:
+      type: object
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword: { type: string, minLength: 1, maxLength: 200 }
+        newPassword: { type: string, minLength: 12, maxLength: 200 }
+    ActionResult:
+      type: object
+      required: [ok, message]
+      properties:
+        ok: { type: boolean }
+        message: { type: string }
+    ChannelInput:
+      type: object
+      required: [kind, name, username, enabled, translate, targetLanguage, attachSource, prefix, suffix, filter, mediaMode, translationFailure, marketEnabled, showGold, showBitcoin, marketOrder, stalePolicy, format]
+      properties:
+        kind: { type: string, enum: [source, destination] }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        username: { type: string, minLength: 3, maxLength: 200 }
+        enabled: { type: boolean }
+        translate: { type: boolean }
+        targetLanguage: { type: string, default: ar }
+        attachSource: { type: boolean }
+        prefix: { type: string, maxLength: 1000 }
+        suffix: { type: string, maxLength: 1000 }
+        filter: { type: string, enum: [all, text, recommendations] }
+        mediaMode: { type: string, enum: [include, textOnly] }
+        translationFailure: { type: string, enum: [original, hold] }
+        marketEnabled: { type: boolean }
+        showGold: { type: boolean }
+        showBitcoin: { type: boolean }
+        marketOrder: { type: string, enum: [goldFirst, bitcoinFirst] }
+        stalePolicy: { type: string, enum: [hide, lastKnown] }
+        format: { type: string, enum: [plain, html] }
+    Channel:
+      allOf:
+        - { $ref: '#/components/schemas/ChannelInput' }
+        - type: object
+          required: [id, status, lastError, lastMessageAt, createdAt]
+          properties:
+            id: { type: integer }
+            status: { type: string }
+            lastError: { type: [string, 'null'] }
+            lastMessageAt: { type: [string, 'null'] }
+            createdAt: { type: string }
+    TestInput:
+      type: object
+      required: [send]
+      properties:
+        send: { type: boolean, description: Explicit confirmation to send a test message }
+    RoutingRule:
+      type: object
+      required: [sourceId, destinationId]
+      properties:
+        sourceId: { type: integer }
+        destinationId: { type: integer }
+    RoutingInput:
+      type: object
+      required: [rules]
+      properties:
+        rules:
+          type: array
+          items: { $ref: '#/components/schemas/RoutingRule' }
+    MessageRecord:
+      type: object
+      required: [id, text, sourceName, destinationName, status, attempts, translationStatus, createdAt]
+      properties:
+        id: { type: integer }
+        text: { type: string }
+        sourceName: { type: string }
+        destinationName: { type: string }
+        status: { type: string }
+        attempts: { type: integer }
+        translationStatus: { type: string }
+        error: { type: [string, 'null'] }
+        createdAt: { type: string }
+    LogEntry:
+      type: object
+      required: [id, level, message, createdAt, category]
+      properties:
+        id: { type: integer }
+        level: { type: string }
+        message: { type: string }
+        category: { type: string }
+        createdAt: { type: string }
+    Dashboard:
+      type: object
+      required: [workerStatus, telegramStatus, sources, destinations, processedToday, sentToday, failed, pending, recentMessages, recentLogs, activity]
+      properties:
+        workerStatus: { type: string }
+        telegramStatus: { type: string }
+        sources: { type: integer }
+        destinations: { type: integer }
+        processedToday: { type: integer }
+        sentToday: { type: integer }
+        failed: { type: integer }
+        pending: { type: integer }
+        recentMessages:
+          type: array
+          items: { $ref: '#/components/schemas/MessageRecord' }
+        recentLogs:
+          type: array
+          items: { $ref: '#/components/schemas/LogEntry' }
+        activity:
+          type: array
+          items: { $ref: '#/components/schemas/ActivityPoint' }
+    ActivityPoint:
+      type: object
+      required: [hour, sent, failed]
+      properties:
+        hour: { type: string }
+        sent: { type: integer }
+        failed: { type: integer }
+    Settings:
+      type: object
+      required: [marketInterval, marketStaleMinutes, translationProvider, translationModel, timezone, maxAttempts]
+      properties:
+        marketInterval: { type: integer, minimum: 60, maximum: 86400 }
+        marketStaleMinutes: { type: integer, minimum: 1, maximum: 1440 }
+        translationProvider: { type: string, enum: [disabled, replit, deepl] }
+        translationModel: { type: string, maxLength: 100 }
+        timezone: { type: string, default: Asia/Jerusalem }
+        maxAttempts: { type: integer, minimum: 1, maximum: 10 }
+    MarketQuote:
+      type: object
+      required: [symbol, price, previousPrice, direction, provider, updatedAt, stale]
+      properties:
+        symbol: { type: string }
+        price: { type: number }
+        previousPrice: { type: [number, 'null'] }
+        direction: { type: string, enum: [up, down, neutral] }
+        provider: { type: string }
+        updatedAt: { type: string }
+        stale: { type: boolean }
+    ServiceState:
+      type: object
+      required: [id, name, status, detail]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        status: { type: string }
+        detail: { type: string }
+        checkedAt: { type: [string, 'null'] }
+    ControlInput:
+      type: object
+      required: [action]
+      properties:
+        action: { type: string, enum: [start, pause, restart, testBot] }
+    PreviewInput:
+      type: object
+      required: [sourceId, destinationId, text]
+      properties:
+        sourceId: { type: integer }
+        destinationId: { type: integer }
+        text: { type: string, minLength: 1, maxLength: 4096 }
+    PreviewResult:
+      type: object
+      required: [text, translationStatus, warnings]
+      properties:
+        text: { type: string }
+        translationStatus: { type: string }
+        warnings:
+          type: array
+          items: { type: string }
+    QrState:
+      type: object
+      required: [status, message]
+      properties:
+        status: { type: string }
+        message: { type: string }
+        url: { type: [string, 'null'] }
+        expiresAt: { type: [string, 'null'] }
