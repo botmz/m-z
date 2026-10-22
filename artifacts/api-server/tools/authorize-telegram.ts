@@ -21,7 +21,10 @@ const rl = createInterface({ input: process.stdin, output, terminal: true });
 async function prompt(label: string, secret = false) {
   process.stdout.write(label);
   muted = secret;
-  try { return (await rl.question("")).trim(); } finally { muted = false; process.stdout.write("\n"); }
+  try {
+    const value = await rl.question("");
+    return secret ? value : value.trim();
+  } finally { muted = false; process.stdout.write("\n"); }
 }
 const client = new TelegramClient(new StringSession(""), Number(process.env.API_ID), process.env.API_HASH!, {
   connectionRetries: 5, baseLogger: new Logger(LogLevel.NONE),

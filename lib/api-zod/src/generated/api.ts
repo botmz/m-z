@@ -507,3 +507,19 @@ export const GetTelegramQrResponse = zod.object({
 })
 
 
+export const submitTelegramQrPasswordBodyPasswordMax = 512;
+
+
+
+export const SubmitTelegramQrPasswordBody = zod.object({
+  "password": zod.string().min(1).max(submitTelegramQrPasswordBodyPasswordMax)
+})
+
+export const SubmitTelegramQrPasswordResponse = zod.object({
+  "status": zod.string(),
+  "message": zod.string(),
+  "url": zod.string().nullish(),
+  "expiresAt": zod.string().nullish()
+})
+
+

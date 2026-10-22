@@ -80,6 +80,7 @@ const LABELS: Record<string, [string, Tone]> = {
   warn: ['تحذير', 'warn'],
   warning: ['تحذير', 'warn'],
   needs_2fa: ['يتطلب التحقق بخطوتين', 'warn'],
+  confirming: ['جارٍ تأكيد الربط', 'warn'],
   unconfigured: ['غير مهيأ', 'warn'],
   not_configured: ['غير مهيأ', 'warn'],
   stopped: ['متوقف', 'neutral'],

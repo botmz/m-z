@@ -292,6 +292,20 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/QrState' }
+  /mz/telegram/qr/2fa:
+    post:
+      operationId: submitTelegramQrPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TelegramQrPasswordInput' }
+      responses:
+        '200':
+          description: The one-time verification is being checked
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QrState' }
 components:
   schemas:
     HealthStatus:
@@ -482,3 +496,8 @@ components:
         message: { type: string }
         url: { type: [string, 'null'] }
         expiresAt: { type: [string, 'null'] }
+    TelegramQrPasswordInput:
+      type: object
+      required: [password]
+      properties:
+        password: { type: string, minLength: 1, maxLength: 512, writeOnly: true }

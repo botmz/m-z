@@ -37,4 +37,5 @@ export * from './routingRule';
 export * from './serviceState';
 export * from './settings';
 export * from './settingsTranslationProvider';
+export * from './telegramQrPasswordInput';
 export * from './testInput';

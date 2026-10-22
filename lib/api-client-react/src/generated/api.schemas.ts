@@ -291,6 +291,14 @@ export interface QrState {
   expiresAt?: string | null;
 }
 
+export interface TelegramQrPasswordInput {
+  /**
+     * @minLength 1
+     * @maxLength 512
+     */
+  password: string;
+}
+
 export type GetMessagesParams = {
 search?: string;
 status?: string;

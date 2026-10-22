@@ -6,6 +6,7 @@ import { encrypt, decrypt } from "./auth";
 import { pool, getSetting, setSetting, audit, safeError, channelRow, type Channel } from "./store";
 import { acceptsMessage } from "./composition";
 import { validateTelegramApiCredentials } from "./telegram-api-credentials";
+import { OneTimeSecretGate } from "./one-time-secret-gate";
 
 let client: TelegramClient | undefined;
 let starting: Promise<void> | undefined;
@@ -13,6 +14,7 @@ let qrBusy = false;
 let qrGeneration = 0;
 let qrAbort: AbortController | undefined;
 let qrTask: Promise<void> | undefined;
+let activePasswordGate: OneTimeSecretGate | undefined;
 let floodUntil = 0;
 const messageFilter = new NewMessage({});
 export const readerState = { status: "not_authorized", detail: "يلزم تفويض جلسة MTProto لقراءة المصادر العامة", checkedAt: null as string | null };
@@ -51,13 +53,19 @@ export async function beginQr() {
   if (qrBusy && qrState.status === "connecting") return { ...qrState };
   if (qrBusy) {
     qrAbort?.abort();
+    activePasswordGate?.cancel();
     await qrTask;
   }
   qrBusy = true;
   const generation = ++qrGeneration;
   const abort = new AbortController();
   qrAbort = abort;
-  const timeout = setTimeout(() => abort.abort(), 180000);
+  const passwordGate = new OneTimeSecretGate();
+  activePasswordGate = passwordGate;
+  let passwordAttempts = 0;
+  const cancelPendingPassword = () => passwordGate.cancel("انتهت مهلة التحقق؛ ابدأ ربطاً جديداً");
+  abort.signal.addEventListener("abort", cancelPendingPassword, { once: true });
+  const timeout = setTimeout(() => abort.abort(), 300000);
   Object.assign(qrState, { status: "connecting", message: "جارٍ إنشاء رمز تفويض آمن", url: null, expiresAt: null });
   qrTask = (async () => {
     let qrClient: TelegramClient | undefined;
@@ -81,12 +89,28 @@ export async function beginQr() {
           if (abort.signal.aborted || generation !== qrGeneration) throw new Error("انتهت مهلة تفويض QR، ابدأ من جديد");
           Object.assign(qrState, { status: "waiting", message: "من تطبيق Telegram: الإعدادات ← الأجهزة ← ربط جهاز، ثم امسح الرمز", url: `tg://login?token=${token.toString("base64url")}`, expiresAt: new Date(expires * 1000).toISOString() });
         },
-        // Never ask for or accept the owner's personal Telegram password in this application.
         password: async () => {
-          Object.assign(qrState, { status: "needs_2fa", message: "الحساب يطلب تحققاً بخطوتين. لن نطلب كلمة مرور حسابك هنا. استخدم أداة التفويض المحلية الموضحة في README.", url: null, expiresAt: null });
-          throw new Error("يلزم تفويض محلي لحساب محمي بالتحقق بخطوتين");
+          Object.assign(qrState, {
+            status: "needs_2fa",
+            message: "أدخل كلمة مرور التحقق بخطوتين في الحقل الآمن أدناه. لن تُحفظ أو تُسجّل.",
+            url: null,
+            expiresAt: null,
+          });
+          return passwordGate.wait();
         },
-        onError: async () => true,
+        onError: async (error) => {
+          const code = (error as Error & { errorMessage?: string }).errorMessage;
+          if (code === "PASSWORD_HASH_INVALID") {
+            passwordAttempts += 1;
+            if (passwordAttempts >= 5) {
+              Object.assign(qrState, { status: "error", message: "تعذر التحقق بعد عدة محاولات. ابدأ ربطاً جديداً وحاول مرة أخرى.", url: null, expiresAt: null });
+              return true;
+            }
+            Object.assign(qrState, { status: "needs_2fa", message: "كلمة المرور غير صحيحة. أعد إدخال كلمة مرور التحقق بخطوتين." });
+            return false;
+          }
+          return true;
+        },
       });
       if (abort.signal.aborted || generation !== qrGeneration) throw new Error("انتهت مهلة الربط");
       const session = qrClient.session.save() as unknown as string;
@@ -100,23 +124,34 @@ export async function beginQr() {
       client.addEventHandler(onMessage, messageFilter);
     } catch (e) {
       if (generation !== qrGeneration) return;
-      if (qrState.status !== "needs_2fa") {
-        const raw = e instanceof Error ? e.message : "";
-        const message = /API_ID غير مضبوط|API_HASH غير مضبوط|API_ID_INVALID|API_HASH_INVALID|API_ID_PUBLISHED_FLOOD/.test(raw)
-          ? safeError(e)
-          : abort.signal.aborted ? "انتهت مهلة الربط أو تعذر الاتصال بخوادم Telegram. اضغط رمز جديد للمحاولة مرة أخرى."
-          : safeError(e);
-        Object.assign(qrState, { status: abort.signal.aborted ? "expired" : "error", message, url: null, expiresAt: null });
-      }
-      await audit("warning", "reader", qrState.message);
+      const code = (e as Error & { errorMessage?: string }).errorMessage;
+      const message = qrState.status === "error" ? qrState.message
+        : abort.signal.aborted ? "انتهت مهلة الربط أو خطوة التحقق؛ ابدأ ربطاً جديداً."
+        : code === "AUTH_USER_CANCEL" ? "أوقف Telegram خطوة التحقق. ابدأ رمزاً جديداً وحاول مرة أخرى."
+        : safeError(e);
+      Object.assign(qrState, { status: abort.signal.aborted ? "expired" : "error", message, url: null, expiresAt: null });
+      await audit("warning", "reader", message);
     } finally {
       clearTimeout(timeout);
       clearTimeout(connectionTimeout);
+      abort.signal.removeEventListener("abort", cancelPendingPassword);
+      passwordGate.cancel();
+      if (activePasswordGate === passwordGate) activePasswordGate = undefined;
       if (!authorized && qrClient) void qrClient.disconnect().catch(() => undefined);
       if (generation === qrGeneration) qrBusy = false;
     }
   })();
   // Return an immutable snapshot: background callbacks must not race JSON serialization.
+  return { ...qrState };
+}
+export function submitQrPassword(password: string) {
+  const gate = activePasswordGate;
+  if (!qrBusy || qrState.status !== "needs_2fa" || !gate?.isWaiting || !gate.submit(password)) {
+    const error = new Error("لا توجد خطوة تحقق بخطوتين تنتظر كلمة مرور؛ ابدأ ربط QR جديداً");
+    Object.assign(error, { status: 409 });
+    throw error;
+  }
+  Object.assign(qrState, { status: "confirming", message: "جارٍ التحقق من كلمة المرور مع Telegram", url: null, expiresAt: null });
   return { ...qrState };
 }
 export async function testSource(source: Channel) {

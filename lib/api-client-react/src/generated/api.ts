@@ -40,6 +40,7 @@ import type {
   RoutingRule,
   ServiceState,
   Settings,
+  TelegramQrPasswordInput,
   TestInput
 } from './api.schemas';
 
@@ -1944,4 +1945,86 @@ export function useGetTelegramQr<TData = Awaited<ReturnType<typeof getTelegramQr
 
 
 
+
+export const getSubmitTelegramQrPasswordUrl = () => {
+
+
+
+
+  return `/api/mz/telegram/qr/2fa`
+}
+
+export const submitTelegramQrPassword = async (telegramQrPasswordInput: TelegramQrPasswordInput, options?: Parameters<typeof customFetch>[1]): Promise<QrState> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<QrState>(getSubmitTelegramQrPasswordUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(telegramQrPasswordInput)
+  }
+);}
+
+
+
+
+
+export const getSubmitTelegramQrPasswordMutationKey = () => ['submitTelegramQrPassword'] as const;
+
+export const getSubmitTelegramQrPasswordMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitTelegramQrPassword>>, TError,SubmitTelegramQrPasswordMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof submitTelegramQrPassword>>, TError,SubmitTelegramQrPasswordMutationVariables, TContext> => {
+
+const mutationKey = getSubmitTelegramQrPasswordMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof submitTelegramQrPassword>>, SubmitTelegramQrPasswordMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  submitTelegramQrPassword(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SubmitTelegramQrPasswordMutationResult = NonNullable<Awaited<ReturnType<typeof submitTelegramQrPassword>>>
+    export type SubmitTelegramQrPasswordMutationBody = BodyType<TelegramQrPasswordInput>
+    export type SubmitTelegramQrPasswordMutationError = ErrorType<unknown>
+    export type SubmitTelegramQrPasswordMutationVariables = {data: BodyType<TelegramQrPasswordInput>}
+
+    export const useSubmitTelegramQrPassword = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitTelegramQrPassword>>, TError,SubmitTelegramQrPasswordMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof submitTelegramQrPassword>>,
+        TError,
+        SubmitTelegramQrPasswordMutationVariables,
+        TContext
+      > => {
+      return useMutation(getSubmitTelegramQrPasswordMutationOptions(options));
+    }
 

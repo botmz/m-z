@@ -1,12 +1,13 @@
 import { Router, type IRouter } from "express";
+import { rateLimit } from "express-rate-limit";
 import {
   GetDashboardResponse, GetMessagesQueryParams, GetMessagesResponse, GetLogsQueryParams, GetLogsResponse,
   RetryMessageParams, SaveSettingsBody, GetSettingsResponse, GetMarketResponse,
-  ControlWorkerBody, PreviewMessageBody, PreviewMessageResponse, GetServicesResponse,
+  ControlWorkerBody, PreviewMessageBody, PreviewMessageResponse, GetServicesResponse, SubmitTelegramQrPasswordBody,
 } from "@workspace/api-zod";
 import { pool, channels, channel, messageHistory, logs, settings, setSetting, getSetting, audit } from "../../lib/store";
 import { botState } from "../../lib/telegram-bot";
-import { readerState, readerStatus, beginQr, qrState } from "../../lib/telegram-reader";
+import { readerState, readerStatus, beginQr, qrState, submitQrPassword } from "../../lib/telegram-reader";
 import { workerState, control } from "../../lib/worker";
 import { marketQuotes, refreshPrices } from "../../lib/market";
 import { compose } from "../../lib/composition";
@@ -106,3 +107,11 @@ operationsRouter.get("/services", async (_req, res) => {
 });
 operationsRouter.post("/telegram/qr", async (_req, res) => { res.json(await beginQr()); });
 operationsRouter.get("/telegram/qr", async (_req, res) => { res.json(qrState); });
+const qrPasswordLimit = rateLimit({
+  windowMs: 15 * 60 * 1000, limit: 5, standardHeaders: "draft-8", legacyHeaders: false,
+  message: { error: "محاولات التحقق كثيرة؛ ابدأ ربطاً جديداً بعد قليل" },
+});
+operationsRouter.post("/telegram/qr/2fa", qrPasswordLimit, async (req, res) => {
+  const { password } = SubmitTelegramQrPasswordBody.parse(req.body);
+  res.json(submitQrPassword(password));
+});
