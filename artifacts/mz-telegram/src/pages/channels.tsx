@@ -20,6 +20,7 @@ import {
   reportError, reportResult, staleLabels,
 } from '@/lib/mz';
 import { useFmt } from '@/lib/use-fmt';
+import { Link } from 'wouter';
 
 type Kind = 'source' | 'destination';
 const opts = (o: Record<string, string>): [string, string][] => Object.entries(o);
@@ -212,22 +213,62 @@ function ChannelForm({
 function TestDialog({ channel, onClose }: { channel: Channel; onClose: () => void }) {
   const test = useTestChannel();
   const [confirm, setConfirm] = useState(false);
-  const run = (send: boolean) =>
+  const [sourceResult, setSourceResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const source = channel.kind === 'source';
+  const needsReaderAuth = source && sourceResult && !sourceResult.ok && /(MTProto|تفويض)/i.test(sourceResult.message);
+  const run = (send: boolean) => {
+    setSourceResult(null);
     test.mutate({ id: channel.id, data: { send } }, {
-      onSuccess: (r) => { reportResult(r); if (send) { setConfirm(false); } },
+      onSuccess: (r) => {
+        if (source) setSourceResult(r);
+        else reportResult(r);
+        if (send) setConfirm(false);
+      },
       onError: (e) => reportError(e),
     });
+  };
   return (
     <>
       <Dialog open onOpenChange={(o) => !o && onClose()}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>اختبار: {channel.name}</DialogTitle>
-            <DialogDescription>أضف البوت مشرفاً للقناة مع صلاحية نشر الرسائل أولاً. الفحص لا يرسل شيئاً؛ الإرسال يدفع رسالة اختبار حقيقية إلى القناة.</DialogDescription>
+            <DialogDescription>
+              {source
+                ? 'يفحص صلاحية القراءة بحساب Telegram المفوّض (MTProto) فقط؛ لا ينشر أي رسالة. فعّل العامل من صفحة الخدمات لبدء تحويل الرسائل.'
+                : 'أضف البوت مشرفاً في الوجهة مع صلاحية نشر الرسائل. الفحص لا يرسل شيئاً؛ إرسال الاختبار ينشر رسالة حقيقية.'}
+            </DialogDescription>
           </DialogHeader>
+          {source && sourceResult && (
+            <div
+              className={`space-y-2 rounded-md border px-3 py-2 text-sm ${
+                sourceResult.ok ? 'border-success/30 bg-success/10 text-success' : 'border-danger/30 bg-danger/10 text-danger'
+              }`}
+              role={sourceResult.ok ? 'status' : 'alert'}
+              aria-live="polite"
+              data-testid="source-test-result"
+            >
+              <p>{sourceResult.message}</p>
+              {needsReaderAuth && (
+                <Link
+                  href="/services"
+                  className="inline-flex rounded-md border border-gold/50 px-3 py-1.5 font-semibold text-gold hover:bg-gold/10"
+                  data-testid="link-reader-authorization"
+                >
+                  تفويض حساب القراءة من الخدمات
+                </Link>
+              )}
+            </div>
+          )}
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => run(false)} disabled={test.isPending} data-testid="button-test-check">فحص دون إرسال</Button>
-            <Button onClick={() => setConfirm(true)} disabled={test.isPending} data-testid="button-test-send">إرسال رسالة اختبار</Button>
+            {source ? (
+              <Button variant="outline" onClick={() => run(false)} disabled={test.isPending} data-testid="button-test-check">فحص صلاحية القراءة</Button>
+            ) : (
+              <>
+                <Button variant="outline" onClick={() => run(false)} disabled={test.isPending} data-testid="button-test-check">فحص دون إرسال</Button>
+                <Button onClick={() => setConfirm(true)} disabled={test.isPending} data-testid="button-test-send">إرسال رسالة اختبار</Button>
+              </>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
