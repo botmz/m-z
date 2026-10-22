@@ -3,14 +3,15 @@ import { rateLimit } from "express-rate-limit";
 import {
   GetDashboardResponse, GetMessagesQueryParams, GetMessagesResponse, GetLogsQueryParams, GetLogsResponse,
   RetryMessageParams, SaveSettingsBody, GetSettingsResponse, GetMarketResponse,
-  ControlWorkerBody, PreviewMessageBody, PreviewMessageResponse, GetServicesResponse, SubmitTelegramQrPasswordBody,
+  SendPreviewMessageBody, SendPreviewMessageResponse, ControlWorkerBody, PreviewMessageBody, PreviewMessageResponse, GetServicesResponse, SubmitTelegramQrPasswordBody,
 } from "@workspace/api-zod";
-import { pool, channels, channel, messageHistory, logs, settings, setSetting, getSetting, audit } from "../../lib/store";
-import { botState } from "../../lib/telegram-bot";
+import { pool, channels, channel, messageHistory, logs, settings, setSetting, getSetting, audit, safeError } from "../../lib/store";
+import { botState, testDestination } from "../../lib/telegram-bot";
 import { readerState, readerStatus, beginQr, qrState, submitQrPassword } from "../../lib/telegram-reader";
 import { workerState, control } from "../../lib/worker";
 import { marketQuotes, refreshPrices } from "../../lib/market";
 import { compose } from "../../lib/composition";
+import { sendManualMessage } from "../../lib/telegram-manual-send";
 
 export const operationsRouter: IRouter = Router();
 operationsRouter.get("/dashboard", async (_req, res) => {
@@ -86,8 +87,45 @@ operationsRouter.post("/preview", async (req, res) => {
   }
   const preview = await compose(source, destination, input.text);
   const routes = await pool.query("SELECT 1 FROM routing_rules WHERE source_id=$1 AND destination_id=$2", [source.id, -destination.id]);
-  if (!routes.rows.length) preview.warnings.push("لا توجد قاعدة ربط بين المصدر والوجهة");
+  if (!routes.rows.length) preview.warnings.push("لا يوجد توجيه تلقائي محفوظ بين المصدر والوجهة؛ الإرسال اليدوي من هذه الصفحة يرسل هذه الرسالة فقط.");
   res.json(PreviewMessageResponse.parse(preview));
+});
+operationsRouter.post("/preview/send", async (req, res): Promise<void> => {
+  const input = SendPreviewMessageBody.parse(req.body);
+  const source = await channel(input.sourceId);
+  const destination = await channel(input.destinationId);
+  if (source.kind !== "source" || destination.kind !== "destination") {
+    res.status(400).json({ error: "اختر مصدراً ووجهة صالحين" });
+    return;
+  }
+  if (!source.enabled || !destination.enabled) {
+    res.status(400).json({ error: "فعّل المصدر والوجهة قبل الإرسال اليدوي" });
+    return;
+  }
+
+  const permissions = await testDestination(destination.id, destination.username, false);
+  if (!permissions.ok) {
+    res.json(SendPreviewMessageResponse.parse({ ok: false, message: permissions.message }));
+    return;
+  }
+
+  const composed = await compose(source, destination, input.text);
+  if (!composed.text.trim()) {
+    res.status(400).json({ error: "لا توجد رسالة نصية قابلة للإرسال" });
+    return;
+  }
+  try {
+    const sentCount = await sendManualMessage(destination.username, composed.text, composed.html, destination.format);
+    const message = sentCount === 1
+      ? `تم إرسال الرسالة مرة واحدة إلى ${destination.name}`
+      : `تم إرسال الرسالة إلى ${destination.name} على ${sentCount} أجزاء`;
+    await audit("info", "delivery", message);
+    res.json(SendPreviewMessageResponse.parse({ ok: true, message }));
+  } catch (error) {
+    const message = safeError(error);
+    await audit("error", "delivery", message);
+    res.json(SendPreviewMessageResponse.parse({ ok: false, message }));
+  }
 });
 operationsRouter.get("/services", async (_req, res) => {
   await pool.query("SELECT 1");

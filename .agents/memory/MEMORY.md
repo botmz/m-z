@@ -1,0 +1,2 @@
+- [Telegram session environments](telegram-session-environments.md) — Development and production PostgreSQL are separate; verify session recovery in the environment the owner uses.
+- [Preview one-off sends](preview-one-off-send.md) — Manual sends from preview must not create persistent forwarding rules.

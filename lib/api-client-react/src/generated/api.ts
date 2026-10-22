@@ -1807,6 +1807,88 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       return useMutation(getPreviewMessageMutationOptions(options));
     }
 
+export const getSendPreviewMessageUrl = () => {
+
+
+
+
+  return `/api/mz/preview/send`
+}
+
+export const sendPreviewMessage = async (previewInput: PreviewInput, options?: Parameters<typeof customFetch>[1]): Promise<ActionResult> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<ActionResult>(getSendPreviewMessageUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(previewInput)
+  }
+);}
+
+
+
+
+
+export const getSendPreviewMessageMutationKey = () => ['sendPreviewMessage'] as const;
+
+export const getSendPreviewMessageMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendPreviewMessage>>, TError,SendPreviewMessageMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof sendPreviewMessage>>, TError,SendPreviewMessageMutationVariables, TContext> => {
+
+const mutationKey = getSendPreviewMessageMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof sendPreviewMessage>>, SendPreviewMessageMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  sendPreviewMessage(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SendPreviewMessageMutationResult = NonNullable<Awaited<ReturnType<typeof sendPreviewMessage>>>
+    export type SendPreviewMessageMutationBody = BodyType<PreviewInput>
+    export type SendPreviewMessageMutationError = ErrorType<unknown>
+    export type SendPreviewMessageMutationVariables = {data: BodyType<PreviewInput>}
+
+    export const useSendPreviewMessage = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendPreviewMessage>>, TError,SendPreviewMessageMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof sendPreviewMessage>>,
+        TError,
+        SendPreviewMessageMutationVariables,
+        TContext
+      > => {
+      return useMutation(getSendPreviewMessageMutationOptions(options));
+    }
+
 export const getBeginTelegramQrUrl = () => {
 
 

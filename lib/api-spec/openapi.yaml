@@ -275,6 +275,20 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PreviewResult' }
+  /mz/preview/send:
+    post:
+      operationId: sendPreviewMessage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PreviewInput' }
+      responses:
+        '200':
+          description: One-time send result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActionResult' }
   /mz/telegram/qr:
     post:
       operationId: beginTelegramQr

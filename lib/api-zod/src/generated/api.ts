@@ -491,6 +491,22 @@ export const PreviewMessageResponse = zod.object({
 })
 
 
+export const sendPreviewMessageBodyTextMax = 4096;
+
+
+
+export const SendPreviewMessageBody = zod.object({
+  "sourceId": zod.number().int(),
+  "destinationId": zod.number().int(),
+  "text": zod.string().min(1).max(sendPreviewMessageBodyTextMax)
+})
+
+export const SendPreviewMessageResponse = zod.object({
+  "ok": zod.boolean(),
+  "message": zod.string()
+})
+
+
 export const BeginTelegramQrResponse = zod.object({
   "status": zod.string(),
   "message": zod.string(),
