@@ -5,6 +5,7 @@ import { acceptsMessage, sourceLink, splitText, originalHtml, escapeHtml } from 
 import { direction } from "../src/lib/market";
 import { normalizeUsername, sameTelegramUsername, pool, type Channel } from "../src/lib/store";
 import { CreateChannelBody } from "@workspace/api-zod";
+import { findSourcesWithMultipleDestinations } from "../src/lib/routing";
 
 const source: Channel = {
   id: 1, kind: "source", name: "Unit Test", username: "@unit_test", enabled: true,
@@ -46,6 +47,16 @@ test("Telegram usernames compare without case sensitivity for legacy delivery re
   assert(sameTelegramUsername("@Market_channel", "@market_channel"));
   assert(sameTelegramUsername("Market_channel", "@MARKET_CHANNEL"));
   assert(!sameTelegramUsername("@market_channel", "@other_channel"));
+});
+test("routing permits one destination per source while allowing a destination to serve multiple sources", () => {
+  assert.deepEqual(
+    findSourcesWithMultipleDestinations([{ sourceId: 1, destinationId: -1 }, { sourceId: 2, destinationId: -1 }]),
+    [],
+  );
+  assert.deepEqual(
+    findSourcesWithMultipleDestinations([{ sourceId: 1, destinationId: -1 }, { sourceId: 1, destinationId: -2 }]),
+    [1],
+  );
 });
 test("private links, arbitrary URLs, users and malformed references are rejected", () => {
   for (const value of ["https://t.me/+abc", "https://evil.test/channel", "@a", "t.me/c/123/1", "x';DELETE"]) assert.throws(() => normalizeUsername(value));
