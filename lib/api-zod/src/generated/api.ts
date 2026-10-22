@@ -306,6 +306,28 @@ export const TestChannelResponse = zod.object({
 })
 
 
+
+
+
+export const SaveChannelRoutingParams = zod.object({
+  "id": zod.coerce.number().int().min(1)
+})
+
+export const saveChannelRoutingBodyDestinationIdsItemMin = -2147483648;
+export const saveChannelRoutingBodyDestinationIdsItemMax = -1;
+
+
+
+export const SaveChannelRoutingBody = zod.object({
+  "destinationIds": zod.array(zod.number().int().min(saveChannelRoutingBodyDestinationIdsItemMin).max(saveChannelRoutingBodyDestinationIdsItemMax))
+})
+
+export const SaveChannelRoutingResponse = zod.object({
+  "ok": zod.boolean(),
+  "message": zod.string()
+})
+
+
 export const GetRoutingResponseItem = zod.object({
   "sourceId": zod.number().int(),
   "destinationId": zod.number().int()

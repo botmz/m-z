@@ -151,6 +151,14 @@ export interface RoutingInput {
   rules: RoutingRule[];
 }
 
+export interface SourceRoutingInput {
+  /**
+     * @items.minimum -2147483648
+     * @items.maximum -1
+     */
+  destinationIds: number[];
+}
+
 export interface MessageRecord {
   id: number;
   text: string;

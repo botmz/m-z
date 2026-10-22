@@ -40,6 +40,7 @@ import type {
   RoutingRule,
   ServiceState,
   Settings,
+  SourceRoutingInput,
   TelegramQrPasswordInput,
   TestInput
 } from './api.schemas';
@@ -901,6 +902,89 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getTestChannelMutationOptions(options));
+    }
+
+export const getSaveChannelRoutingUrl = (id: number,) => {
+
+
+
+
+  return `/api/mz/channels/${id}/routing`
+}
+
+export const saveChannelRouting = async (id: number,
+    sourceRoutingInput: SourceRoutingInput, options?: Parameters<typeof customFetch>[1]): Promise<ActionResult> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<ActionResult>(getSaveChannelRoutingUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(sourceRoutingInput)
+  }
+);}
+
+
+
+
+
+export const getSaveChannelRoutingMutationKey = () => ['saveChannelRouting'] as const;
+
+export const getSaveChannelRoutingMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveChannelRouting>>, TError,SaveChannelRoutingMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof saveChannelRouting>>, TError,SaveChannelRoutingMutationVariables, TContext> => {
+
+const mutationKey = getSaveChannelRoutingMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof saveChannelRouting>>, SaveChannelRoutingMutationVariables> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  saveChannelRouting(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SaveChannelRoutingMutationResult = NonNullable<Awaited<ReturnType<typeof saveChannelRouting>>>
+    export type SaveChannelRoutingMutationBody = BodyType<SourceRoutingInput>
+    export type SaveChannelRoutingMutationError = ErrorType<unknown>
+    export type SaveChannelRoutingMutationVariables = {id: number;data: BodyType<SourceRoutingInput>}
+
+    export const useSaveChannelRouting = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveChannelRouting>>, TError,SaveChannelRoutingMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof saveChannelRouting>>,
+        TError,
+        SaveChannelRoutingMutationVariables,
+        TContext
+      > => {
+      return useMutation(getSaveChannelRoutingMutationOptions(options));
     }
 
 export const getGetRoutingUrl = () => {

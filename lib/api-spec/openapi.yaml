@@ -131,6 +131,22 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ActionResult' }
+  /mz/channels/{id}/routing:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+    put:
+      operationId: saveChannelRouting
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SourceRoutingInput' }
+      responses:
+        '200':
+          description: Source routes saved
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActionResult' }
   /mz/routing:
     get:
       operationId: getRouting
@@ -401,6 +417,14 @@ components:
         rules:
           type: array
           items: { $ref: '#/components/schemas/RoutingRule' }
+    SourceRoutingInput:
+      type: object
+      required: [destinationIds]
+      properties:
+        destinationIds:
+          type: array
+          uniqueItems: true
+          items: { type: integer, minimum: -2147483648, maximum: -1 }
     MessageRecord:
       type: object
       required: [id, text, sourceName, destinationName, status, attempts, translationStatus, createdAt]

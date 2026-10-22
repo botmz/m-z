@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Download, FlaskConical, Pencil, Plus, Send, Trash2 } from 'lucide-react';
+import { Check, Download, FlaskConical, Pencil, Plus, Send, Trash2 } from 'lucide-react';
 import {
   getGetChannelsQueryKey, getGetDashboardQueryKey, getGetRoutingQueryKey, useCreateChannel, useDeleteChannel,
-  useGetChannels, useTestChannel, useUpdateChannel, type Channel, type ChannelInput,
+  useGetChannels, useGetRouting, useSaveChannelRouting, useTestChannel, useUpdateChannel, type Channel, type ChannelInput,
 } from '@workspace/api-client-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,14 +33,38 @@ function Toggle({ label, checked, onChange, id }: { label: string; checked: bool
   );
 }
 
-function ChannelForm({ kind, editing, onClose }: { kind: Kind; editing: Channel | null; onClose: () => void }) {
+function ChannelForm({
+  kind, editing, onClose, destinations, destinationsLoading, destinationsError, retryDestinations,
+}: {
+  kind: Kind;
+  editing: Channel | null;
+  onClose: () => void;
+  destinations: Channel[];
+  destinationsLoading: boolean;
+  destinationsError: boolean;
+  retryDestinations: () => void;
+}) {
   const qc = useQueryClient();
   const create = useCreateChannel();
   const update = useUpdateChannel();
+  const saveRouting = useSaveChannelRouting();
+  const src = kind === 'source';
+  const routeQuery = useGetRouting({ query: { queryKey: getGetRoutingQueryKey(), enabled: src && Boolean(editing) } });
   const [f, setF] = useState<ChannelInput>(editing ? channelToInput(editing) : defaultChannel(kind));
+  const [selectedDestinations, setSelectedDestinations] = useState<number[]>([]);
+  const [routesHydrated, setRoutesHydrated] = useState(!src || !editing);
+  const [createdChannel, setCreatedChannel] = useState<Channel | null>(null);
+  const [routeSaveError, setRouteSaveError] = useState('');
   const set = <K extends keyof ChannelInput>(k: K, v: ChannelInput[K]) => setF((p) => ({ ...p, [k]: v }));
-  const pending = create.isPending || update.isPending;
+  const pending = create.isPending || update.isPending || saveRouting.isPending;
   const valid = f.name.trim().length > 0 && f.username.trim().length >= 3;
+  const routingReady = !src || (!destinationsLoading && !destinationsError && routesHydrated);
+
+  useEffect(() => {
+    if (!src || !editing || !routeQuery.data) return;
+    setSelectedDestinations(routeQuery.data.filter((route) => route.sourceId === editing.id).map((route) => route.destinationId));
+    setRoutesHydrated(true);
+  }, [src, editing, routeQuery.data]);
 
   const done = () => {
     qc.invalidateQueries({ queryKey: getGetChannelsQueryKey() });
@@ -48,12 +72,28 @@ function ChannelForm({ kind, editing, onClose }: { kind: Kind; editing: Channel 
     qc.invalidateQueries({ queryKey: getGetDashboardQueryKey() });
     onClose();
   };
-  const submit = () => {
+  const submit = async () => {
+    setRouteSaveError('');
     const body = { ...f, name: f.name.trim(), username: f.username.trim(), targetLanguage: f.translate ? f.targetLanguage || 'ar' : f.targetLanguage || 'ar' };
-    if (editing) update.mutate({ id: editing.id, data: body }, { onSuccess: done, onError: (e) => reportError(e) });
-    else create.mutate({ data: body }, { onSuccess: done, onError: (e) => reportError(e) });
+    const existing = editing ?? createdChannel;
+    let channelSaved = false;
+    try {
+      const saved = existing
+        ? await update.mutateAsync({ id: existing.id, data: body })
+        : await create.mutateAsync({ data: body });
+      channelSaved = true;
+      if (!existing && src) setCreatedChannel(saved);
+      if (src) {
+        await saveRouting.mutateAsync({ id: saved.id, data: { destinationIds: selectedDestinations } });
+      }
+      done();
+    } catch (error) {
+      if (channelSaved && src) {
+        setRouteSaveError('تم حفظ بيانات المصدر، لكن تعذّر حفظ وجهاته. أعد المحاولة؛ لن تتغير وجهات المصادر الأخرى.');
+      }
+      reportError(error);
+    }
   };
-  const src = kind === 'source';
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -69,6 +109,71 @@ function ChannelForm({ kind, editing, onClose }: { kind: Kind; editing: Channel 
 
           {src ? (
             <>
+              <div className="sm:col-span-2 space-y-1.5">
+                <div id="source-destinations-label" className="text-sm font-semibold">قنوات الوجهة</div>
+                <p className="text-xs text-muted-foreground">اختر يدوياً وجهة واحدة أو أكثر؛ لن تصل الرسائل إلى الوجهات غير المحددة.</p>
+                {destinationsLoading ? (
+                  <p className="rounded-md border border-border px-3 py-2 text-sm text-muted-foreground">جارٍ تحميل الوجهات...</p>
+                ) : destinationsError ? (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-danger/40 px-3 py-2">
+                    <span className="text-sm text-danger">تعذّر تحميل قائمة الوجهات؛ أعد المحاولة قبل الحفظ.</span>
+                    <Button type="button" variant="outline" size="sm" onClick={retryDestinations}>إعادة المحاولة</Button>
+                  </div>
+                ) : editing && routeQuery.isLoading ? (
+                  <p className="rounded-md border border-border px-3 py-2 text-sm text-muted-foreground">جارٍ تحميل الربط المحفوظ...</p>
+                ) : editing && routeQuery.isError ? (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-danger/40 px-3 py-2">
+                    <span className="text-sm text-danger">تعذّر تحميل وجهات هذا المصدر؛ أعد المحاولة قبل الحفظ.</span>
+                    <Button type="button" variant="outline" size="sm" onClick={() => { void routeQuery.refetch(); }}>إعادة المحاولة</Button>
+                  </div>
+                ) : destinations.length === 0 ? (
+                  <p className="rounded-md border border-border px-3 py-2 text-sm text-muted-foreground">لا توجد وجهات بعد؛ احفظ المصدر دون توجيه أو أضف وجهة أولاً.</p>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="grid max-h-40 gap-2 overflow-y-auto sm:grid-cols-2" role="group" aria-labelledby="source-destinations-label">
+                      {destinations.map((destination) => {
+                        const selected = selectedDestinations.includes(destination.id);
+                        return (
+                          <button
+                            key={destination.id}
+                            type="button"
+                            aria-pressed={selected}
+                            aria-label={`${destination.name}${destination.enabled ? '' : '، معطلة'}`}
+                            onClick={() => setSelectedDestinations((current) => (
+                              selected
+                                ? current.filter((id) => id !== destination.id)
+                                : [...current, destination.id]
+                            ))}
+                            data-testid={`toggle-source-destination-${destination.id}`}
+                            className={`flex min-w-0 items-center justify-between gap-3 rounded-md border px-3 py-2 text-right text-sm transition-colors ${
+                              selected ? 'border-gold bg-gold/10 text-gold' : 'border-border hover:border-gold/50'
+                            }`}
+                          >
+                            <span className="flex min-w-0 items-center gap-2">
+                              <span className="min-w-0">
+                                <span className="block truncate font-semibold">{destination.name}</span>
+                                <span dir="ltr" className="block truncate text-xs text-muted-foreground">{destination.username}</span>
+                              </span>
+                              {!destination.enabled && <span className="shrink-0 rounded-full border border-warn/40 px-2 py-0.5 text-[10px] font-semibold text-warn">معطّلة</span>}
+                            </span>
+                            <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border ${
+                              selected ? 'border-gold bg-gold text-background' : 'border-muted-foreground/50'
+                            }`}>
+                              {selected && <Check size={14} aria-hidden="true" />}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-xs text-muted-foreground" data-testid="text-source-route-count">
+                      {selectedDestinations.length === 0
+                        ? 'لا توجد وجهات محددة؛ لن تُرسل رسائل هذا المصدر تلقائياً.'
+                        : `محدد ${selectedDestinations.length} من ${destinations.length} وجهة.`}
+                    </p>
+                  </div>
+                )}
+              </div>
+              {routeSaveError && <div className="sm:col-span-2 rounded-md border border-danger/40 bg-danger/5 px-3 py-2 text-sm text-danger" role="alert" data-testid="text-route-save-error">{routeSaveError}</div>}
               <div className="sm:col-span-2"><Toggle id="translate" label="ترجمة الرسائل إلى العربية" checked={f.translate} onChange={(v) => { set('translate', v); if (v) set('targetLanguage', 'ar'); }} /></div>
               {f.translate && (
                 <Field label="عند فشل الترجمة"><Sel value={f.translationFailure} onChange={(e) => set('translationFailure', e.target.value as ChannelInput['translationFailure'])} options={opts(failureLabels)} data-testid="select-failure" /></Field>
@@ -97,7 +202,7 @@ function ChannelForm({ kind, editing, onClose }: { kind: Kind; editing: Channel 
         </div>
         <DialogFooter className="gap-2">
           <Button variant="outline" onClick={onClose}>إلغاء</Button>
-          <Button onClick={submit} disabled={!valid || pending} data-testid="button-save-channel">{pending ? 'جارٍ الحفظ...' : 'حفظ'}</Button>
+          <Button onClick={submit} disabled={!valid || !routingReady || pending} data-testid="button-save-channel">{pending ? 'جارٍ الحفظ...' : 'حفظ'}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -153,6 +258,7 @@ export default function ChannelsPage({ kind }: { kind: Kind }) {
   const [removing, setRemoving] = useState<Channel | null>(null);
   const src = kind === 'source';
   const list = (q.data ?? []).filter((c) => c.kind === kind);
+  const destinations = (q.data ?? []).filter((c) => c.kind === 'destination');
 
   const toggle = (c: Channel, enabled: boolean) =>
     update.mutate({ id: c.id, data: { ...channelToInput(c), enabled } }, {
@@ -211,7 +317,16 @@ export default function ChannelsPage({ kind }: { kind: Kind }) {
           </ul>
         )}
       </Panel>
-      {form.open && <ChannelForm key={form.ch?.id ?? 'new'} kind={kind} editing={form.ch} onClose={() => setForm({ open: false, ch: null })} />}
+      {form.open && <ChannelForm
+        key={form.ch?.id ?? 'new'}
+        kind={kind}
+        editing={form.ch}
+        destinations={destinations}
+        destinationsLoading={q.isLoading}
+        destinationsError={q.isError}
+        retryDestinations={() => { void q.refetch(); }}
+        onClose={() => setForm({ open: false, ch: null })}
+      />}
       {testing && <TestDialog channel={testing} onClose={() => setTesting(null)} />}
       <AlertDialog open={!!removing} onOpenChange={(o) => !o && setRemoving(null)}>
         <AlertDialogContent>

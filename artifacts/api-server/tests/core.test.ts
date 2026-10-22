@@ -4,7 +4,8 @@ import { protectTokens, restoreTokens } from "../src/lib/translation";
 import { acceptsMessage, sourceLink, splitText, originalHtml, escapeHtml } from "../src/lib/composition";
 import { direction } from "../src/lib/market";
 import { normalizeUsername, sameTelegramUsername, pool, type Channel } from "../src/lib/store";
-import { CreateChannelBody } from "@workspace/api-zod";
+import { CreateChannelBody, SaveChannelRoutingBody } from "@workspace/api-zod";
+import { replaceSourceRouting } from "../src/lib/routing";
 
 const source: Channel = {
   id: 1, kind: "source", name: "Unit Test", username: "@unit_test", enabled: true,
@@ -114,6 +115,67 @@ test("PostgreSQL allows explicitly selected many-to-many routing and prevents du
     assert.equal(retryable.rowCount, 0);
   } finally {
     await db.query("ROLLBACK"); // No test channels/messages persist.
+    db.release();
+  }
+});
+test("editing a source replaces only its selected destinations and rolls back invalid choices", async () => {
+  const db = await pool.connect();
+  const suffix = `${process.pid}_${Date.now()}`;
+  let sourceId: number | undefined;
+  let otherSourceId: number | undefined;
+  let destinationId: number | undefined;
+  let otherDestinationId: number | undefined;
+  try {
+    sourceId = (await db.query(
+      "INSERT INTO source_channels(name,username,enabled) VALUES($1,$2,false) RETURNING id",
+      [`route source ${suffix}`, `@mz_src_${suffix}`],
+    )).rows[0].id;
+    otherSourceId = (await db.query(
+      "INSERT INTO source_channels(name,username,enabled) VALUES($1,$2,false) RETURNING id",
+      [`route source other ${suffix}`, `@mz_src_other_${suffix}`],
+    )).rows[0].id;
+    destinationId = (await db.query(
+      "INSERT INTO destination_channels(name,username,enabled) VALUES($1,$2,false) RETURNING id",
+      [`route destination ${suffix}`, `@mz_dst_${suffix}`],
+    )).rows[0].id;
+    otherDestinationId = (await db.query(
+      "INSERT INTO destination_channels(name,username,enabled) VALUES($1,$2,false) RETURNING id",
+      [`route destination other ${suffix}`, `@mz_dst_other_${suffix}`],
+    )).rows[0].id;
+
+    assert(SaveChannelRoutingBody.safeParse({ destinationIds: [-destinationId, -otherDestinationId] }).success);
+    assert(!SaveChannelRoutingBody.safeParse({ destinationIds: [destinationId] }).success);
+
+    await replaceSourceRouting(sourceId, [-destinationId, -otherDestinationId]);
+    await replaceSourceRouting(otherSourceId, [-otherDestinationId]);
+    await replaceSourceRouting(sourceId, [-destinationId]);
+
+    const selected = await db.query(
+      "SELECT destination_id FROM routing_rules WHERE source_id=$1 ORDER BY destination_id",
+      [sourceId],
+    );
+    const otherSelected = await db.query(
+      "SELECT destination_id FROM routing_rules WHERE source_id=$1",
+      [otherSourceId],
+    );
+    assert.deepEqual(selected.rows.map((row) => row.destination_id), [destinationId]);
+    assert.deepEqual(otherSelected.rows.map((row) => row.destination_id), [otherDestinationId]);
+
+    await assert.rejects(() => replaceSourceRouting(sourceId!, [-2147483647]), /غير موجودة/);
+    const afterFailure = await db.query(
+      "SELECT destination_id FROM routing_rules WHERE source_id=$1",
+      [sourceId],
+    );
+    assert.deepEqual(afterFailure.rows.map((row) => row.destination_id), [destinationId]);
+
+    await replaceSourceRouting(sourceId, []);
+    const cleared = await db.query("SELECT id FROM routing_rules WHERE source_id=$1", [sourceId]);
+    assert.equal(cleared.rowCount, 0);
+  } finally {
+    if (sourceId) await db.query("DELETE FROM source_channels WHERE id=$1", [sourceId]);
+    if (otherSourceId) await db.query("DELETE FROM source_channels WHERE id=$1", [otherSourceId]);
+    if (destinationId) await db.query("DELETE FROM destination_channels WHERE id=$1", [destinationId]);
+    if (otherDestinationId) await db.query("DELETE FROM destination_channels WHERE id=$1", [otherDestinationId]);
     db.release();
   }
 });

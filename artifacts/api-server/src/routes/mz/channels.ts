@@ -1,10 +1,11 @@
 import { Router, type IRouter } from "express";
 import {
   CreateChannelBody, UpdateChannelBody, UpdateChannelParams, DeleteChannelParams,
-  TestChannelBody, TestChannelParams, SaveRoutingBody, GetRoutingResponse,
+  TestChannelBody, TestChannelParams, SaveRoutingBody, GetRoutingResponse, SaveChannelRoutingBody,
   GetChannelsResponse, CreateChannelResponse, UpdateChannelResponse,
 } from "@workspace/api-zod";
 import { pool, channels, channel, channelRow, normalizeUsername, audit } from "../../lib/store";
+import { replaceSourceRouting } from "../../lib/routing";
 import { testSource } from "../../lib/telegram-reader";
 import { testDestination } from "../../lib/telegram-bot";
 
@@ -50,6 +51,14 @@ channelRouter.post("/channels/:id/test", async (req, res) => {
   const current = await channel(id);
   if (current.kind === "source" && send) { res.status(400).json({ error: "لا نرسل رسائل اختبار إلى قنوات المصدر" }); return; }
   res.json(current.kind === "source" ? await testSource(current) : await testDestination(id, current.username, send));
+});
+channelRouter.put("/channels/:id/routing", async (req, res) => {
+  const { id } = UpdateChannelParams.parse(req.params);
+  if (id <= 0) { res.status(400).json({ error: "معرّف المصدر غير صالح" }); return; }
+  const { destinationIds } = SaveChannelRoutingBody.parse(req.body);
+  await replaceSourceRouting(id, destinationIds);
+  await audit("info", "routing", `تم تحديث وجهات مصدر ${id} يدوياً (${destinationIds.length} وجهة)`);
+  res.json({ ok: true, message: "تم حفظ وجهات المصدر المحددة" });
 });
 channelRouter.get("/routing", async (_req, res) => {
   const { rows } = await pool.query('SELECT source_id AS "sourceId",-destination_id AS "destinationId" FROM routing_rules ORDER BY id');
