@@ -1,0 +1,28 @@
+kind = "slides"
+previewPath = "/mz-telegram-overview/"
+title = "MZ Telegram Bots — Project Overview"
+description = "An eight-slide project overview of the MZ Telegram Bots owner dashboard, its Telegram reading and publishing workflows, secure QR/2FA authorization, architecture, reliability, and verification status."
+version = "1.0.0"
+id = "artifacts/mz-telegram-overview"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/mz-telegram-overview/" ]
+localPort = 18969
+
+[services.development]
+run = "pnpm --filter @workspace/mz-telegram-overview run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/mz-telegram-overview", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/mz-telegram-overview/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18969"
+BASE_PATH = "/mz-telegram-overview/"

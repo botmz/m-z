@@ -1,0 +1,83 @@
+@import 'tailwindcss';
+
+@theme inline {
+  --color-primary: var(--slide-primary);
+  --color-accent: var(--slide-accent);
+  --color-bg: var(--slide-bg);
+  --color-text: var(--slide-text);
+  --color-muted: var(--slide-muted);
+  --font-display: var(--font-display-family);
+  --font-body: var(--font-body-family);
+}
+
+:root {
+  --slide-primary: hsl(43 68% 56%);
+  --slide-accent: hsl(43 30% 17%);
+  --slide-bg: hsl(40 10% 6%);
+  --slide-text: hsl(42 25% 92%);
+  --slide-muted: hsl(40 8% 62%);
+  --font-display-family: 'Space Grotesk', sans-serif;
+  --font-body-family: 'Instrument Sans', sans-serif;
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--slide-bg);
+  color: var(--slide-text);
+  @apply font-body antialiased;
+}
+
+.slide {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.slide-viewer {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.deck-grid {
+  background-image:
+    linear-gradient(to right, hsl(43 68% 56% / 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, hsl(43 68% 56% / 0.06) 1px, transparent 1px);
+  background-size: 5vw 5vw;
+}
+
+.deck-orbit {
+  background:
+    radial-gradient(ellipse at 52% 48%, hsl(43 68% 56% / 0.2), transparent 61%),
+    linear-gradient(135deg, hsl(43 30% 17% / 0.1), transparent 70%);
+}
+
+.deck-rule {
+  background: linear-gradient(90deg, hsl(43 68% 56% / 0.85), hsl(43 68% 56% / 0.06));
+}
+
+.deck-row {
+  border-bottom: 1px solid hsl(42 25% 92% / 0.13);
+}
+
+.deck-bullet {
+  color: var(--slide-primary);
+  font-family: var(--font-display-family);
+  font-weight: 700;
+}
+
+.text-wrap-balance {
+  text-wrap: balance;
+}
+
+.text-wrap-pretty {
+  text-wrap: pretty;
+}

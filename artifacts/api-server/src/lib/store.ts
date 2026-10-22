@@ -46,9 +46,17 @@ export async function channel(id: number): Promise<Channel> {
   return channelRow(rows[0], kind);
 }
 export function normalizeUsername(input: string): string {
-  const match = input.trim().match(/^(?:https?:\/\/(?:www\.)?t\.me\/|@)?([a-zA-Z][a-zA-Z0-9_]{3,31})\/?$/);
+  const trimmed = input.trim();
+  const linkPrefix = /^https?:\/\/(?:www\.)?t\.me\//i;
+  const candidate = linkPrefix.test(trimmed)
+    ? `https://t.me/${trimmed.replace(linkPrefix, "")}`
+    : trimmed;
+  const match = candidate.match(/^(?:https?:\/\/(?:www\.)?t\.me\/|@)?([a-zA-Z][a-zA-Z0-9_]{3,31})\/?$/);
   if (!match) throw Object.assign(new Error("أدخل معرف قناة عامة مثل @channelname أو رابط https://t.me/channelname"), { status: 400 });
   return `@${match[1]!.toLowerCase()}`;
+}
+export function sameTelegramUsername(left: string, right: string): boolean {
+  return left.trim().replace(/^@/, "").toLowerCase() === right.trim().replace(/^@/, "").toLowerCase();
 }
 export async function messageHistory(search = "", status = "", channelId?: number) {
   const { rows } = await pool.query(`

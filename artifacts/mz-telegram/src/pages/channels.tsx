@@ -64,7 +64,7 @@ function ChannelForm({ kind, editing, onClose }: { kind: Kind; editing: Channel 
         </DialogHeader>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="الاسم"><Input value={f.name} maxLength={120} onChange={(e) => set('name', e.target.value)} data-testid="input-name" /></Field>
-          <Field label="اسم المستخدم" hint="مثال: @channel_name"><Input dir="ltr" value={f.username} maxLength={200} onChange={(e) => set('username', e.target.value)} data-testid="input-username" /></Field>
+          <Field label="اسم المستخدم" hint="مثال: @channel_name؛ الأحرف الكبيرة والصغيرة مقبولة"><Input dir="ltr" value={f.username} maxLength={200} onChange={(e) => set('username', e.target.value)} data-testid="input-username" /></Field>
           <div className="sm:col-span-2"><Toggle id="enabled" label="مفعّل" checked={f.enabled} onChange={(v) => set('enabled', v)} /></div>
 
           {src ? (

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { protectTokens, restoreTokens } from "../src/lib/translation";
 import { acceptsMessage, sourceLink, splitText, originalHtml, escapeHtml } from "../src/lib/composition";
 import { direction } from "../src/lib/market";
-import { normalizeUsername, pool, type Channel } from "../src/lib/store";
+import { normalizeUsername, sameTelegramUsername, pool, type Channel } from "../src/lib/store";
 import { CreateChannelBody } from "@workspace/api-zod";
 
 const source: Channel = {
@@ -36,7 +36,16 @@ test("market direction uses only the previous successful reading", () => {
   assert.equal(direction(9, 10), "down");
 });
 test("valid public channel names normalize consistently", () => {
-  for (const value of ["@Market_channel", "https://t.me/Market_channel", "Market_channel"]) assert.equal(normalizeUsername(value), "@market_channel");
+  for (const value of [
+    "@Market_channel", "@MARKET_CHANNEL", "Market_channel",
+    "https://t.me/Market_channel", "HTTPS://WWW.T.ME/MARKET_CHANNEL/",
+  ]) assert.equal(normalizeUsername(value), "@market_channel");
+  assert.equal(normalizeUsername("@Market_channel"), normalizeUsername("@market_channel"));
+});
+test("Telegram usernames compare without case sensitivity for legacy delivery records", () => {
+  assert(sameTelegramUsername("@Market_channel", "@market_channel"));
+  assert(sameTelegramUsername("Market_channel", "@MARKET_CHANNEL"));
+  assert(!sameTelegramUsername("@market_channel", "@other_channel"));
 });
 test("private links, arbitrary URLs, users and malformed references are rejected", () => {
   for (const value of ["https://t.me/+abc", "https://evil.test/channel", "@a", "t.me/c/123/1", "x';DELETE"]) assert.throws(() => normalizeUsername(value));

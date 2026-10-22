@@ -1,0 +1,66 @@
+[
+  {
+    "id": "aa7a6a01-5d34-4ae1-8ed0-a1b801a3fe01",
+    "position": 1,
+    "filepath": "src/pages/slides/01-MZTelegramBots.tsx",
+    "title": "MZ Telegram Bots",
+    "description": "An owner-operated dashboard for managing Telegram channel intake, content preparation, and publishing.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "aa7a6a01-5d34-4ae1-8ed0-a1b801a3fe02",
+    "position": 2,
+    "filepath": "src/pages/slides/02-OneControlledWorkflow.tsx",
+    "title": "One controlled publishing workflow",
+    "description": "One controlled publishing workflow",
+    "speakerNotes": ""
+  },
+  {
+    "id": "aa7a6a01-5d34-4ae1-8ed0-a1b801a3fe03",
+    "position": 3,
+    "filepath": "src/pages/slides/03-WhatOwnersManage.tsx",
+    "title": "What owners can manage",
+    "description": "What owners can manage",
+    "speakerNotes": ""
+  },
+  {
+    "id": "aa7a6a01-5d34-4ae1-8ed0-a1b801a3fe04",
+    "position": 4,
+    "filepath": "src/pages/slides/04-SystemArchitecture.tsx",
+    "title": "A clear, separate system architecture",
+    "description": "A clear, separate system architecture",
+    "speakerNotes": ""
+  },
+  {
+    "id": "aa7a6a01-5d34-4ae1-8ed0-a1b801a3fe05",
+    "position": 5,
+    "filepath": "src/pages/slides/05-TelegramConnections.tsx",
+    "title": "Two Telegram connections, two different jobs",
+    "description": "Two Telegram connections, two different jobs",
+    "speakerNotes": ""
+  },
+  {
+    "id": "aa7a6a01-5d34-4ae1-8ed0-a1b801a3fe06",
+    "position": 6,
+    "filepath": "src/pages/slides/06-SecureQRVerification.tsx",
+    "title": "Secure QR and two-step verification",
+    "description": "Secure QR and two-step verification",
+    "speakerNotes": ""
+  },
+  {
+    "id": "aa7a6a01-5d34-4ae1-8ed0-a1b801a3fe07",
+    "position": 7,
+    "filepath": "src/pages/slides/07-ReliabilityAndVisibility.tsx",
+    "title": "Reliability and operational visibility",
+    "description": "Reliability and operational visibility",
+    "speakerNotes": ""
+  },
+  {
+    "id": "aa7a6a01-5d34-4ae1-8ed0-a1b801a3fe08",
+    "position": 8,
+    "filepath": "src/pages/slides/08-VerificationAndNextStep.tsx",
+    "title": "Verification status and next step",
+    "description": "Verification status and next step",
+    "speakerNotes": ""
+  }
+]

@@ -1,4 +1,4 @@
-import { pool, getSetting, setSetting, settings, audit, safeError, channel } from "./store";
+import { pool, getSetting, setSetting, settings, audit, safeError, channel, sameTelegramUsername } from "./store";
 import { connectReader, readerConnected, readerState, catchUp, downloadPhoto } from "./telegram-reader";
 import { botApi, botState, testBot, TelegramApiError, AmbiguousSendError } from "./telegram-bot";
 import { compose, splitText } from "./composition";
@@ -25,7 +25,7 @@ async function processDelivery(id: number) {
   }
   const source = await channel(delivery.source_id);
   const destination = await channel(-delivery.destination_id);
-  if (source.username !== delivery.source_key || destination.username !== delivery.destination_key) {
+  if (!sameTelegramUsername(source.username, delivery.source_key) || !sameTelegramUsername(destination.username, delivery.destination_key)) {
     await pool.query("UPDATE message_deliveries SET status='held',error=$2,updated_at=now() WHERE id=$1", [id, "تغير معرف القناة بعد استقبال الرسالة؛ أُوقف الإرسال لحماية الوجهة"]);
     return;
   }

@@ -6,8 +6,16 @@ export class TelegramApiError extends Error {
 export class AmbiguousSendError extends Error {}
 export const botState = { status: "unverified", detail: "لم يتم اختبار اتصال البوت", checkedAt: null as string | null, id: 0, username: "" };
 export function destinationTestErrorMessage(error: unknown) {
-  if (error instanceof TelegramApiError && /member list is inaccessible/i.test(error.message)) {
-    return "تعذر التحقق من صلاحيات البوت في القناة. أضف البوت مشرفاً مع صلاحية نشر الرسائل، ثم أعد الفحص.";
+  if (error instanceof TelegramApiError) {
+    if (/member list is inaccessible/i.test(error.message)) {
+      return "تعذّر على Telegram التحقق من عضوية البوت. أضفه إلى القناة كمشرف مع صلاحية نشر الرسائل، ثم أعد الفحص.";
+    }
+    if (/chat not found/i.test(error.message)) {
+      return "لم يعثر Telegram على الوجهة. تحقق من اسم المستخدم، وأن القناة عامة وأن البوت مضاف إليها.";
+    }
+    if (/not enough rights|have no rights|bot is not a member/i.test(error.message)) {
+      return "البوت لا يملك صلاحية النشر في هذه القناة. أضفه كمشرف وفعّل صلاحية نشر الرسائل.";
+    }
   }
   return safeError(error);
 }
