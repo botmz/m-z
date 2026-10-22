@@ -7,7 +7,6 @@ import {
 import { pool, channels, channel, channelRow, normalizeUsername, audit } from "../../lib/store";
 import { testSource } from "../../lib/telegram-reader";
 import { testDestination } from "../../lib/telegram-bot";
-import { findSourcesWithMultipleDestinations } from "../../lib/routing";
 
 export const channelRouter: IRouter = Router();
 channelRouter.get("/channels", async (_req, res) => { res.json(GetChannelsResponse.parse(await channels())); });
@@ -59,11 +58,6 @@ channelRouter.get("/routing", async (_req, res) => {
 channelRouter.put("/routing", async (req, res) => {
   const { rules } = SaveRoutingBody.parse(req.body);
   const seen = new Set<string>();
-  const sourcesWithMultipleDestinations = findSourcesWithMultipleDestinations(rules);
-  if (sourcesWithMultipleDestinations.length) {
-    res.status(400).json({ error: "كل مصدر يمكن ربطه بوجهة واحدة فقط؛ اختر وجهة واحدة لكل مصدر" });
-    return;
-  }
   for (const rule of rules) {
     if (rule.sourceId <= 0 || rule.destinationId >= 0 || seen.has(`${rule.sourceId}:${rule.destinationId}`)) {
       res.status(400).json({ error: "قاعدة ربط غير صالحة أو مكررة" }); return;

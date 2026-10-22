@@ -5,7 +5,6 @@ import { acceptsMessage, sourceLink, splitText, originalHtml, escapeHtml } from 
 import { direction } from "../src/lib/market";
 import { normalizeUsername, sameTelegramUsername, pool, type Channel } from "../src/lib/store";
 import { CreateChannelBody } from "@workspace/api-zod";
-import { findSourcesWithMultipleDestinations } from "../src/lib/routing";
 
 const source: Channel = {
   id: 1, kind: "source", name: "Unit Test", username: "@unit_test", enabled: true,
@@ -48,16 +47,6 @@ test("Telegram usernames compare without case sensitivity for legacy delivery re
   assert(sameTelegramUsername("Market_channel", "@MARKET_CHANNEL"));
   assert(!sameTelegramUsername("@market_channel", "@other_channel"));
 });
-test("routing permits one destination per source while allowing a destination to serve multiple sources", () => {
-  assert.deepEqual(
-    findSourcesWithMultipleDestinations([{ sourceId: 1, destinationId: -1 }, { sourceId: 2, destinationId: -1 }]),
-    [],
-  );
-  assert.deepEqual(
-    findSourcesWithMultipleDestinations([{ sourceId: 1, destinationId: -1 }, { sourceId: 1, destinationId: -2 }]),
-    [1],
-  );
-});
 test("private links, arbitrary URLs, users and malformed references are rejected", () => {
   for (const value of ["https://t.me/+abc", "https://evil.test/channel", "@a", "t.me/c/123/1", "x';DELETE"]) assert.throws(() => normalizeUsername(value));
 });
@@ -96,15 +85,21 @@ test("channel input contract requires per-channel switches", () => {
   assert(CreateChannelBody.safeParse(source).success);
   assert(!CreateChannelBody.safeParse({ name: "incomplete", username: "@abcde" }).success);
 });
-test("PostgreSQL prevents duplicate reception, routing and per-destination delivery atomically", async () => {
+test("PostgreSQL allows explicitly selected many-to-many routing and prevents duplicate deliveries", async () => {
   const db = await pool.connect();
   try {
     await db.query("BEGIN");
     const s = (await db.query("INSERT INTO source_channels(name,username,enabled) VALUES('unit source','@mz_unit_source',false) RETURNING id")).rows[0].id;
+    const s2 = (await db.query("INSERT INTO source_channels(name,username,enabled) VALUES('unit source 2','@mz_unit_source_2',false) RETURNING id")).rows[0].id;
     const d = (await db.query("INSERT INTO destination_channels(name,username,enabled) VALUES('unit destination','@mz_unit_destination',false) RETURNING id")).rows[0].id;
+    const d2 = (await db.query("INSERT INTO destination_channels(name,username,enabled) VALUES('unit destination 2','@mz_unit_destination_2',false) RETURNING id")).rows[0].id;
     await db.query("INSERT INTO routing_rules(source_id,destination_id) VALUES($1,$2)", [s, d]);
     const route = await db.query("INSERT INTO routing_rules(source_id,destination_id) VALUES($1,$2) ON CONFLICT DO NOTHING RETURNING id", [s, d]);
     assert.equal(route.rowCount, 0);
+    const secondDestination = await db.query("INSERT INTO routing_rules(source_id,destination_id) VALUES($1,$2) RETURNING id", [s, d2]);
+    const secondSource = await db.query("INSERT INTO routing_rules(source_id,destination_id) VALUES($1,$2) RETURNING id", [s2, d]);
+    assert.equal(secondDestination.rowCount, 1);
+    assert.equal(secondSource.rowCount, 1);
     const m = (await db.query("INSERT INTO messages(source_id,source_key,telegram_message_id,text) VALUES($1,'@mz_unit_source',1,'unit') RETURNING id", [s])).rows[0].id;
     const duplicate = await db.query("INSERT INTO messages(source_id,source_key,telegram_message_id,text) VALUES($1,'@mz_unit_source',1,'unit') ON CONFLICT DO NOTHING RETURNING id", [s]);
     assert.equal(duplicate.rowCount, 0);

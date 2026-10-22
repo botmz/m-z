@@ -10,7 +10,6 @@ import { reportError, reportResult } from '@/lib/mz';
 import { cn } from '@/lib/utils';
 
 const key = (s: number, d: number) => `${s}:${d}`;
-const routeSourceId = (route: string) => Number(route.split(':')[0]);
 
 export default function RoutingPage() {
   const qc = useQueryClient();
@@ -33,18 +32,13 @@ export default function RoutingPage() {
   const sources = (ch.data ?? []).filter((c) => c.kind === 'source');
   const dests = (ch.data ?? []).filter((c) => c.kind === 'destination');
   const dirty = [...sel].sort().join('|') !== base;
-  const routeCounts = new Map<number, number>();
-  for (const route of sel) {
-    const sourceId = routeSourceId(route);
-    routeCounts.set(sourceId, (routeCounts.get(sourceId) ?? 0) + 1);
-  }
-  const multipleRoutes = sources.filter((source) => (routeCounts.get(source.id) ?? 0) > 1);
 
-  const choose = (sourceId: number, destinationId: number | null) => setSel((p) => {
-    const n = new Set([...p].filter((route) => routeSourceId(route) !== sourceId));
-    if (destinationId !== null) n.add(key(sourceId, destinationId));
+  const flip = (route: string) => setSel((p) => {
+    const n = new Set(p);
+    n.has(route) ? n.delete(route) : n.add(route);
     return n;
   });
+  const clearSource = (sourceId: number) => setSel((p) => new Set([...p].filter((route) => !route.startsWith(`${sourceId}:`))));
   const reset = () => {
     const s = new Set((rt.data ?? []).map((r) => key(r.sourceId, r.destinationId)));
     setSel(s);
@@ -66,11 +60,11 @@ export default function RoutingPage() {
     <>
       <PageHeader
         title="التوجيه"
-        desc="اختر وجهة واحدة فقط لكل مصدر. لن تُرسل رسائل المصدر إلى بقية الوجهات؛ ويمكن للوجهة نفسها استقبال رسائل من عدة مصادر."
+        desc="اختر يدوياً وجهة واحدة أو أكثر لكل مصدر. لن تُرسل الرسائل إلا إلى الوجهات المحددة؛ ويمكن للوجهة نفسها استقبال عدة مصادر."
         actions={
           <>
             <Button variant="outline" onClick={reset} disabled={!dirty} data-testid="button-reset-routing"><RotateCcw /> تراجع</Button>
-            <Button onClick={submit} disabled={!dirty || save.isPending || multipleRoutes.length > 0} data-testid="button-save-routing"><Save /> {save.isPending ? 'جارٍ الحفظ...' : 'حفظ التوجيه'}</Button>
+            <Button onClick={submit} disabled={!dirty || save.isPending} data-testid="button-save-routing"><Save /> {save.isPending ? 'جارٍ الحفظ...' : 'حفظ التوجيه'}</Button>
           </>
         }
       />
@@ -80,12 +74,9 @@ export default function RoutingPage() {
         <Panel><Empty icon={GitFork} title="التوجيه يحتاج مصدراً ووجهة" desc={`لديك ${sources.length} مصدر و${dests.length} وجهة. أضف ما ينقص من صفحتي المصادر والوجهات.`} /></Panel>
       ) : (
         <Panel flush>
-          {multipleRoutes.length > 0 && (
-            <div className="border-b border-warn/30 bg-warn/10 px-4 py-3 text-sm font-semibold text-warn" role="alert" data-testid="text-multiple-routes">
-              توجد توجيهات محفوظة لأكثر من وجهة لبعض المصادر ({multipleRoutes.map((source) => source.name).join('، ')}).
-              اختر وجهة واحدة لكل مصدر قبل الحفظ؛ لن تتغير القواعد المحفوظة حتى تضغط «حفظ التوجيه».
+          <div className="border-b border-border bg-muted/20 px-4 py-2 text-sm text-muted-foreground" data-testid="text-routing-help">
+              حدد الوجهات المطلوبة فقط لكل مصدر. «بدون توجيه» يمسح كل وجهاته؛ ولن تتغير القواعد المحفوظة حتى تضغط «حفظ التوجيه».
             </div>
-          )}
           {dirty && <div className="border-b border-warn/30 bg-warn/10 px-4 py-2 text-xs font-semibold text-warn" data-testid="text-unsaved">لديك تغييرات غير محفوظة</div>}
           <ul className="divide-y divide-border">
             {sources.map((s) => (
@@ -94,15 +85,15 @@ export default function RoutingPage() {
                   <div className="font-bold">{s.name}</div>
                   <div className="num text-xs text-muted-foreground">{s.username}</div>
                 </div>
-                <div className="flex flex-wrap gap-2" role="group" aria-label={`وجهة المصدر ${s.name}`}>
+                <div className="flex flex-wrap gap-2" role="group" aria-label={`وجهات المصدر ${s.name}`}>
                   <button
                     type="button"
-                    aria-pressed={![...sel].some((route) => routeSourceId(route) === s.id)}
-                    onClick={() => choose(s.id, null)}
+                    aria-pressed={![...sel].some((route) => route.startsWith(`${s.id}:`))}
+                    onClick={() => clearSource(s.id)}
                     data-testid={`toggle-route-${s.id}-none`}
                     className={cn(
                       'rounded-md border px-3 py-1.5 text-sm font-semibold transition-colors',
-                      ![...sel].some((route) => routeSourceId(route) === s.id) ? 'border-gold bg-gold/15 text-gold' : 'border-border text-muted-foreground hover:border-gold/50',
+                      ![...sel].some((route) => route.startsWith(`${s.id}:`)) ? 'border-gold bg-gold/15 text-gold' : 'border-border text-muted-foreground hover:border-gold/50',
                     )}
                   >
                     بدون توجيه
@@ -114,7 +105,7 @@ export default function RoutingPage() {
                         key={d.id}
                         type="button"
                         aria-pressed={on}
-                        onClick={() => choose(s.id, d.id)}
+                        onClick={() => flip(key(s.id, d.id))}
                         data-testid={`toggle-route-${s.id}-${d.id}`}
                         className={cn(
                           'rounded-md border px-3 py-1.5 text-sm font-semibold transition-colors',

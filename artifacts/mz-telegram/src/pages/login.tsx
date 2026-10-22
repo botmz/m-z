@@ -104,7 +104,7 @@ export default function LoginPage() {
           <div className="flex items-center gap-2 text-gold"><ShieldCheck className="size-5" /><span className="font-bold">مركز تحكم المالك</span></div>
           <p className="max-w-md text-2xl font-bold leading-relaxed">من المصدر إلى القناة، كل رسالة مسجلة وكل حالة حقيقية.</p>
           <ul className="space-y-2 text-sm text-sidebar-foreground/70">
-            <li>مصادر ووجهة محددة لكل مصدر</li>
+            <li>مصادر ووجهات يحددها المالك لكل مصدر</li>
             <li>ترجمة إلى العربية وأسعار الذهب والبتكوين</li>
             <li>سجل كامل لمحاولات الإرسال وإعادة المحاولة</li>
           </ul>
