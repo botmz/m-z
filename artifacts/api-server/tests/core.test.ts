@@ -1,7 +1,7 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { protectTokens, restoreTokens } from "../src/lib/translation";
-import { acceptsMessage, sourceLink, splitText, originalHtml, escapeHtml } from "../src/lib/composition";
+import { acceptsMessage, sourceLink, splitText, originalHtml, escapeHtml, marketPriceLine } from "../src/lib/composition";
 import { direction } from "../src/lib/market";
 import { normalizeUsername, sameTelegramUsername, pool, type Channel } from "../src/lib/store";
 import { CreateChannelBody, SaveChannelRoutingBody } from "@workspace/api-zod";
@@ -66,6 +66,13 @@ test("text-only filter excludes images and image-only sources respect media poli
 test("source link uses real public message identifiers", () => {
   assert.equal(sourceLink("@abcde", 234), "https://t.me/abcde/234");
   assert.equal(sourceLink("@abcde"), "https://t.me/abcde");
+});
+test("market price line omits provider and timestamp while retaining stale-price warning", () => {
+  const fresh = marketPriceLine("BTC/USD", 81671.65, "down", false);
+  assert.equal(fresh, "البيتكوين BTC/USD: 81,671.65 $ ▼");
+  assert(!fresh.includes("Coinbase"));
+  assert(!fresh.includes("2026"));
+  assert.equal(marketPriceLine("XAU/USD", 2400, "up", true), "الذهب XAU/USD: 2,400.00 $ ▲ • سعر قديم");
 });
 test("splitting preserves content and Telegram length limits including surrogate pairs", () => {
   const input = "a".repeat(3999) + "🚀" + "\n" + "b".repeat(6000);

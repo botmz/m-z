@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { GitFork, RotateCcw, Save } from 'lucide-react';
 import {
-  getGetChannelsQueryKey, getGetRoutingQueryKey, useGetChannels, useGetRouting, useSaveRouting,
+  getGetChannelsQueryKey, getGetRoutingQueryKey, useGetChannels, useGetRouting, useSaveChannelRouting,
 } from '@workspace/api-client-react';
 import { Button } from '@/components/ui/button';
 import { Empty, ErrorBox, PageHeader, Panel, RowsSkeleton } from '@/components/mz-ui';
@@ -15,7 +15,7 @@ export default function RoutingPage() {
   const qc = useQueryClient();
   const ch = useGetChannels({ query: { queryKey: getGetChannelsQueryKey() } });
   const rt = useGetRouting({ query: { queryKey: getGetRoutingQueryKey() } });
-  const save = useSaveRouting();
+  const save = useSaveChannelRouting();
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [base, setBase] = useState('');
   const init = useRef(false);
@@ -43,14 +43,32 @@ export default function RoutingPage() {
     const s = new Set((rt.data ?? []).map((r) => key(r.sourceId, r.destinationId)));
     setSel(s);
   };
-  const submit = () => {
-    const rules = [...sel].map((k) => { const [a, b] = k.split(':').map(Number); return { sourceId: a, destinationId: b }; });
-    save.mutate({ data: { rules } }, {
-      onSuccess: (r) => {
-        if (reportResult(r)) { setBase([...sel].sort().join('|')); qc.invalidateQueries({ queryKey: getGetRoutingQueryKey() }); }
-      },
-      onError: (e) => reportError(e),
+  const submit = async () => {
+    const original = new Set(base.split('|').filter(Boolean));
+    const changedSources = sources.filter((source) => {
+      const prefix = `${source.id}:`;
+      const before = [...original].filter((route) => route.startsWith(prefix)).sort().join('|');
+      const after = [...sel].filter((route) => route.startsWith(prefix)).sort().join('|');
+      return before !== after;
     });
+
+    try {
+      for (const source of changedSources) {
+        const destinationIds = [...sel]
+          .filter((route) => route.startsWith(`${source.id}:`))
+          .map((route) => Number(route.split(':')[1]));
+        const result = await save.mutateAsync({ id: source.id, data: { destinationIds } });
+        if (!result.ok) {
+          reportResult(result);
+          return;
+        }
+      }
+      setBase([...sel].sort().join('|'));
+      await qc.invalidateQueries({ queryKey: getGetRoutingQueryKey() });
+      reportResult({ ok: true, message: 'تم حفظ تغييرات المصادر المحددة فقط' });
+    } catch (e) {
+      reportError(e);
+    }
   };
 
   const loading = ch.isLoading || rt.isLoading;
@@ -64,7 +82,7 @@ export default function RoutingPage() {
         actions={
           <>
             <Button variant="outline" onClick={reset} disabled={!dirty} data-testid="button-reset-routing"><RotateCcw /> تراجع</Button>
-            <Button onClick={submit} disabled={!dirty || save.isPending} data-testid="button-save-routing"><Save /> {save.isPending ? 'جارٍ الحفظ...' : 'حفظ التوجيه'}</Button>
+            <Button onClick={() => void submit()} disabled={!dirty || save.isPending} data-testid="button-save-routing"><Save /> {save.isPending ? 'جارٍ الحفظ...' : 'حفظ التوجيه'}</Button>
           </>
         }
       />

@@ -6,6 +6,12 @@ export const escapeHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, 
 export function sourceLink(username: string, messageId?: number) {
   return `https://t.me/${username.replace(/^@/, "")}${messageId ? `/${messageId}` : ""}`;
 }
+export function marketPriceLine(symbol: string, price: number, quoteDirection: string, stale: boolean) {
+  const name = symbol === "XAU/USD" ? "الذهب" : "البيتكوين";
+  const indicator = quoteDirection === "up" ? "▲" : quoteDirection === "down" ? "▼" : "—";
+  const value = `${name} ${symbol}: ${price.toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 })} $ ${indicator}`;
+  return stale ? `${value} • سعر قديم` : value;
+}
 export function acceptsMessage(source: Channel, text: string, hasPhoto: boolean) {
   if (!source.enabled) return false;
   if (source.filter === "text" && hasPhoto) return false;
@@ -45,9 +51,7 @@ export async function compose(source: Channel, destination: Channel, text: strin
       const quote = prices.find(p => p.symbol === symbol);
       if (!quote) { warnings.push(`لا يوجد سعر فعلي لـ ${symbol}`); continue; }
       if (quote.stale && destination.stalePolicy === "hide") { warnings.push(`أُخفي سعر ${symbol} القديم`); continue; }
-      const indicator = quote.direction === "up" ? "▲" : quote.direction === "down" ? "▼" : "—";
-      prefix.push(`${symbol === "XAU/USD" ? "الذهب" : "البيتكوين"} ${symbol}: ${quote.price.toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 })} $ ${indicator}`);
-      prefix.push(`${quote.stale ? "سعر قديم • " : ""}${quote.provider} • ${new Date(quote.updatedAt).toLocaleString("ar", { timeZone: config.timezone })}`);
+      prefix.push(marketPriceLine(symbol, quote.price, quote.direction, quote.stale));
     }
   }
   if (source.prefix) prefix.push(source.prefix);
