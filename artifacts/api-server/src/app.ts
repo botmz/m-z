@@ -1,32 +1,13 @@
 import express, { type Express } from "express";
 import helmet from "helmet";
-import pinoHttp from "pino-http";
 import router from "./routes";
-import { logger } from "./lib/logger";
+import { createHttpLogger } from "./lib/http-logger";
 
 const app: Express = express();
 app.set("trust proxy", 1);
 app.use(helmet({ contentSecurityPolicy: false }));
 
-app.use(
-  pinoHttp({
-    logger,
-    serializers: {
-      req(req) {
-        return {
-          id: req.id,
-          method: req.method,
-          url: req.url?.split("?")[0],
-        };
-      },
-      res(res) {
-        return {
-          statusCode: res.statusCode,
-        };
-      },
-    },
-  }),
-);
+app.use(createHttpLogger());
 app.use(express.json({ limit: "256kb" }));
 app.use(express.urlencoded({ extended: true }));
 

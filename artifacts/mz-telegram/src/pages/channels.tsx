@@ -118,7 +118,7 @@ function TestDialog({ channel, onClose }: { channel: Channel; onClose: () => voi
         <DialogContent>
           <DialogHeader>
             <DialogTitle>اختبار: {channel.name}</DialogTitle>
-            <DialogDescription>الفحص يتحقق من إمكانية الوصول دون إرسال شيء. الإرسال يدفع رسالة اختبار حقيقية إلى القناة.</DialogDescription>
+            <DialogDescription>أضف البوت مشرفاً للقناة مع صلاحية نشر الرسائل أولاً. الفحص لا يرسل شيئاً؛ الإرسال يدفع رسالة اختبار حقيقية إلى القناة.</DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => run(false)} disabled={test.isPending} data-testid="button-test-check">فحص دون إرسال</Button>

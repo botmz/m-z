@@ -5,6 +5,12 @@ export class TelegramApiError extends Error {
 }
 export class AmbiguousSendError extends Error {}
 export const botState = { status: "unverified", detail: "لم يتم اختبار اتصال البوت", checkedAt: null as string | null, id: 0, username: "" };
+export function destinationTestErrorMessage(error: unknown) {
+  if (error instanceof TelegramApiError && /member list is inaccessible/i.test(error.message)) {
+    return "تعذر التحقق من صلاحيات البوت في القناة. أضف البوت مشرفاً مع صلاحية نشر الرسائل، ثم أعد الفحص.";
+  }
+  return safeError(error);
+}
 export async function botApi(method: string, body: Record<string, unknown> | FormData = {}) {
   const token = process.env.BOT_TOKEN;
   if (!token) throw new Error("BOT_TOKEN غير مُعدّ");
@@ -48,8 +54,9 @@ export async function testDestination(id: number, username: string, send: boolea
     await audit("info", "telegram", send ? `تم إرسال رسالة الاختبار إلى ${username}` : `تم التحقق من صلاحية النشر إلى ${username}`);
     return { ok: true, message: send ? "تم إرسال رسالة الاختبار فعلياً" : "تم التحقق من صلاحية نشر البوت" };
   } catch (e) {
-    await pool.query("UPDATE destination_channels SET status='error',last_error=$2 WHERE id=$1", [Math.abs(id), safeError(e)]);
-    await audit("error", "telegram", safeError(e));
-    return { ok: false, message: safeError(e) };
+    const message = destinationTestErrorMessage(e);
+    await pool.query("UPDATE destination_channels SET status='error',last_error=$2 WHERE id=$1", [Math.abs(id), message]);
+    await audit("error", "telegram", message);
+    return { ok: false, message };
   }
 }

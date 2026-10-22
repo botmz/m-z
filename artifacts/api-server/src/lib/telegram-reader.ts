@@ -7,6 +7,7 @@ import { pool, getSetting, setSetting, audit, safeError, channelRow, type Channe
 import { acceptsMessage } from "./composition";
 import { validateTelegramApiCredentials } from "./telegram-api-credentials";
 import { OneTimeSecretGate } from "./one-time-secret-gate";
+import { signInWithQrCode } from "./telegram-qr-sign-in";
 
 let client: TelegramClient | undefined;
 let starting: Promise<void> | undefined;
@@ -62,7 +63,6 @@ export async function beginQr() {
   qrAbort = abort;
   const passwordGate = new OneTimeSecretGate();
   activePasswordGate = passwordGate;
-  let passwordAttempts = 0;
   const cancelPendingPassword = () => passwordGate.cancel("انتهت مهلة التحقق؛ ابدأ ربطاً جديداً");
   abort.signal.addEventListener("abort", cancelPendingPassword, { once: true });
   const timeout = setTimeout(() => abort.abort(), 300000);
@@ -83,42 +83,19 @@ export async function beginQr() {
       clearTimeout(connectionTimeout);
       if (abort.signal.aborted) throw new Error("انتهت مهلة الربط؛ اضغط رمز جديد");
       const credentials = validateTelegramApiCredentials(process.env.API_ID, process.env.API_HASH);
-      await qrClient.signInUserWithQrCode(credentials, {
+      await signInWithQrCode({
+        client: qrClient,
+        credentials,
         abortSignal: abort.signal,
-        qrCode: async ({ token, expires }) => {
-          if (abort.signal.aborted || generation !== qrGeneration) throw new Error("انتهت مهلة تفويض QR، ابدأ من جديد");
-          Object.assign(qrState, { status: "waiting", message: "من تطبيق Telegram: الإعدادات ← الأجهزة ← ربط جهاز، ثم امسح الرمز", url: `tg://login?token=${token.toString("base64url")}`, expiresAt: new Date(expires * 1000).toISOString() });
-        },
-        password: async () => {
-          Object.assign(qrState, {
-            status: "needs_2fa",
-            message: "أدخل كلمة مرور التحقق بخطوتين في الحقل الآمن أدناه. لن تُحفظ أو تُسجّل.",
-            url: null,
-            expiresAt: null,
-          });
-          return passwordGate.wait();
-        },
-        onError: async (error) => {
-          const code = (error as Error & { errorMessage?: string }).errorMessage;
-          if (code === "PASSWORD_HASH_INVALID") {
-            passwordAttempts += 1;
-            if (passwordAttempts >= 5) {
-              Object.assign(qrState, { status: "error", message: "تعذر التحقق بعد عدة محاولات. ابدأ ربطاً جديداً وحاول مرة أخرى.", url: null, expiresAt: null });
-              return true;
-            }
-            Object.assign(qrState, { status: "needs_2fa", message: "كلمة المرور غير صحيحة. أعد إدخال كلمة مرور التحقق بخطوتين." });
-            return false;
-          }
-          return true;
-        },
+        passwordGate,
+        qrState,
+        isCurrent: () => generation === qrGeneration,
+        persistEncryptedSession: async session => setSetting("telegram_session", encrypt(session)),
+        auditAuthorization: () => audit("info", "reader", "تم تفويض جلسة Telegram وحفظها مشفرة في الخادم"),
       });
-      if (abort.signal.aborted || generation !== qrGeneration) throw new Error("انتهت مهلة الربط");
-      const session = qrClient.session.save() as unknown as string;
-      await setSetting("telegram_session", encrypt(session));
       if (client) void client.disconnect().catch(() => undefined);
       client = qrClient;
       authorized = true;
-      await audit("info", "reader", "تم تفويض جلسة Telegram وحفظها مشفرة في الخادم");
       Object.assign(qrState, { status: "connected", message: "تم تفويض Telegram بنجاح", url: null, expiresAt: null });
       Object.assign(readerState, { status: "connected", detail: "جلسة MTProto مفوضة ومتصلة", checkedAt: new Date().toISOString() });
       client.addEventHandler(onMessage, messageFilter);
