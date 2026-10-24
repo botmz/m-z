@@ -481,7 +481,7 @@ components:
       properties:
         marketInterval: { type: integer, minimum: 60, maximum: 86400 }
         marketStaleMinutes: { type: integer, minimum: 1, maximum: 1440 }
-        translationProvider: { type: string, enum: [disabled, replit, deepl] }
+        translationProvider: { type: string, enum: [disabled, replit, deepl, gemini] }
         translationModel: { type: string, maxLength: 100 }
         timezone: { type: string, default: Asia/Jerusalem }
         maxAttempts: { type: integer, minimum: 1, maximum: 10 }

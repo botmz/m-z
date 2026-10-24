@@ -12,6 +12,7 @@ import { workerState, control } from "../../lib/worker";
 import { marketQuotes, refreshPrices } from "../../lib/market";
 import { compose } from "../../lib/composition";
 import { sendManualMessage } from "../../lib/telegram-manual-send";
+import { GEMINI_FREE_MODEL } from "../../lib/translation";
 
 export const operationsRouter: IRouter = Router();
 operationsRouter.get("/dashboard", async (_req, res) => {
@@ -67,6 +68,12 @@ operationsRouter.put("/settings", async (req, res) => {
   }
   if (input.translationProvider === "replit" && !input.translationModel.trim()) {
     res.status(400).json({ error: "حدد نموذجاً صالحاً للترجمة" }); return;
+  }
+  if (input.translationProvider === "gemini" && !process.env.GEMINI_API_KEY) {
+    res.status(400).json({ error: "أضف GEMINI_API_KEY إلى الأسرار قبل تفعيل Gemini" }); return;
+  }
+  if (input.translationProvider === "gemini" && input.translationModel !== GEMINI_FREE_MODEL) {
+    res.status(400).json({ error: `نموذج Gemini المجاني المتاح هو ${GEMINI_FREE_MODEL}` }); return;
   }
   await setSetting("settings", input);
   await audit("info", "settings", "تم تحديث الإعدادات العامة");
@@ -139,8 +146,12 @@ operationsRouter.get("/services", async (_req, res) => {
     { id: "worker", name: "عامل المعالجة", ...workerState },
     { id: "market", name: "مزود أسعار السوق", status: marketError ? "error" : market.length === 2 && market.every(p => !p.stale) ? "connected" : "unverified",
       detail: marketError || "Coinbase للبيتكوين • Gold API للذهب • المقارنة بآخر قراءة ناجحة", checkedAt: market[0]?.updatedAt ?? null },
-    { id: "translation", name: "خدمة الترجمة", status: config.translationProvider === "disabled" ? "disabled" : "configured",
-      detail: config.translationProvider === "replit" ? "Replit AI / OpenAI — الاستخدام مدفوع من الأرصدة؛ صلاحية الخدمة تُختبر عند المعاينة" : config.translationProvider === "deepl" ? "DeepL — صلاحية الخدمة تُختبر عند المعاينة" : "الترجمة معطلة؛ اختر مزوداً ثم فعّلها لكل مصدر", checkedAt: null },
+    { id: "translation", name: "خدمة الترجمة",
+      status: config.translationProvider === "disabled" ? "disabled" : config.translationProvider === "gemini" && !process.env.GEMINI_API_KEY ? "error" : "configured",
+      detail: config.translationProvider === "replit" ? "Replit AI / OpenAI — الاستخدام مدفوع من الأرصدة؛ صلاحية الخدمة تُختبر عند المعاينة"
+        : config.translationProvider === "deepl" ? "DeepL — صلاحية الخدمة تُختبر عند المعاينة"
+        : config.translationProvider === "gemini" ? `Google Gemini API — ${GEMINI_FREE_MODEL} ضمن الحصة المجانية؛ تجاوز الحصة يعتمد على إعداد فوترة Google`
+        : "الترجمة معطلة؛ اختر مزوداً ثم فعّلها لكل مصدر", checkedAt: null },
   ]));
 });
 operationsRouter.post("/telegram/qr", async (_req, res) => { res.json(await beginQr()); });

@@ -1,6 +1,6 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { protectTokens, restoreTokens } from "../src/lib/translation";
+import { GEMINI_FREE_MODEL, protectTokens, requestGeminiTranslation, restoreTokens } from "../src/lib/translation";
 import { acceptsMessage, sourceLink, splitText, originalHtml, escapeHtml, marketPriceLine } from "../src/lib/composition";
 import { direction } from "../src/lib/market";
 import { normalizeUsername, sameTelegramUsername, pool, type Channel } from "../src/lib/store";
@@ -29,6 +29,30 @@ test("rejects translation that removes an immutable token", () => {
 test("rejects translation that duplicates an immutable token", () => {
   const { masked, tokens } = protectTokens("BTC 4250");
   assert.throws(() => restoreTokens(masked + "⟦MZ0⟧", tokens));
+});
+test("Gemini free translation uses the fixed model and keeps its API key out of the URL", async () => {
+  let requestUrl = "";
+  let requestOptions: RequestInit | undefined;
+  const translated = await requestGeminiTranslation(
+    "⟦MZ0⟧ hello",
+    "Arabic",
+    "test-secret",
+    async (input, init) => {
+      requestUrl = String(input);
+      requestOptions = init;
+      return new Response(JSON.stringify({
+        candidates: [{ content: { parts: [{ text: "⟦MZ0⟧ مرحباً" }] } }],
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    },
+  );
+  assert.equal(translated, "⟦MZ0⟧ مرحباً");
+  assert(requestUrl.endsWith(`/models/${GEMINI_FREE_MODEL}:generateContent`));
+  assert.equal(new URL(requestUrl).search, "");
+  const headers = new Headers(requestOptions?.headers);
+  assert.equal(headers.get("x-goog-api-key"), "test-secret");
+  const body = JSON.parse(String(requestOptions?.body));
+  assert.equal(body.contents[0].parts[0].text, "⟦MZ0⟧ hello");
+  assert.equal(body.generationConfig.temperature, 0);
 });
 test("market direction uses only the previous successful reading", () => {
   assert.equal(direction(10, null), "neutral");

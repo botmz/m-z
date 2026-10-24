@@ -12,4 +12,5 @@ export const SettingsTranslationProvider = {
   disabled: 'disabled',
   replit: 'replit',
   deepl: 'deepl',
+  gemini: 'gemini',
 } as const;

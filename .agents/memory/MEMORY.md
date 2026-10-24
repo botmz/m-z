@@ -1,3 +1,4 @@
 - [Telegram session environments](telegram-session-environments.md) — Development and production PostgreSQL are separate; verify session recovery in the environment the owner uses.
 - [Preview one-off sends](preview-one-off-send.md) — Manual sends from preview must not create persistent forwarding rules.
 - [Telegram routing policy](telegram-routing-policy.md) — Only manually selected source-to-destination links may receive messages; never broadcast or overwrite unrelated routes.
+- [Free translation provider](translation-provider.md) — Use Gemini's free API tier for translation; never switch to a credit-billed provider without approval.

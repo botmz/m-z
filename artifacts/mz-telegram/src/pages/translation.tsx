@@ -6,22 +6,31 @@ import { Input } from '@/components/ui/input';
 import { ErrorBox, Field, PageHeader, Panel, RowsSkeleton, Sel } from '@/components/mz-ui';
 import { useSettingsSave } from '@/lib/use-settings-save';
 
-const PROVIDERS: [string, string][] = [['disabled', 'معطّل'], ['replit', 'Replit AI'], ['deepl', 'DeepL']];
+const GEMINI_FREE_MODEL = 'gemini-3.5-flash-lite';
+const PROVIDERS: [string, string][] = [['disabled', 'معطّل'], ['replit', 'Replit AI'], ['deepl', 'DeepL'], ['gemini', 'Gemini المجاني']];
 const NOTES: Record<string, string> = {
   disabled: 'مزود الترجمة معطل. المصادر المفعلة للترجمة ستطبق خيارها عند الفشل: نشر الأصل أو تعليق الرسالة.',
   replit: 'يستخدم Replit AI Integrations للوصول إلى OpenAI دون مفتاح API منك. يُحتسب الاستخدام من أرصدتك؛ فعّله فقط للمصادر المطلوبة وحدد النموذج.',
   deepl: 'يتطلب مفتاح DeepL مضبوطاً على الخادم. إن لم يكن موجوداً ستظهر رسالة الخطأ الفعلية عند الترجمة.',
+  gemini: 'يستخدم Gemini Developer API مباشرةً بالنموذج المجاني المحدد. أضف GEMINI_API_KEY إلى الأسرار. الحصة والحدود تخضع لشروط Google؛ في الخطة المجانية قد تستخدم Google المحتوى لتحسين خدماتها. إذا كانت فوترة Google مفعّلة فقد تُحسب رسوم بعد تجاوز الحصة. لا ينتقل التطبيق تلقائياً إلى مزود آخر.',
 };
 
 function Form({ s }: { s: Settings }) {
   const { save, saving } = useSettingsSave();
   const [p, setP] = useState<string>(s.translationProvider);
-  const [model, setModel] = useState(s.translationModel);
+  const [model, setModel] = useState(s.translationProvider === 'gemini' ? GEMINI_FREE_MODEL : s.translationModel);
   return (
     <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); save({ translationProvider: p as Settings['translationProvider'], translationModel: model.trim() }); }}>
-      <Field label="مزوّد الترجمة"><Sel value={p} onChange={(e) => setP(e.target.value)} options={PROVIDERS} data-testid="select-provider" /></Field>
+      <Field label="مزوّد الترجمة"><Sel value={p} onChange={(e) => {
+        const next = e.target.value;
+        setP(next);
+        if (next === 'gemini') setModel(GEMINI_FREE_MODEL);
+        else if (p === 'gemini') setModel(next === 'replit' ? 'gpt-5-mini' : '');
+      }} options={PROVIDERS} data-testid="select-provider" /></Field>
       <p className="rounded-md border border-border bg-muted/50 p-3 text-sm text-muted-foreground" data-testid="text-provider-note">{NOTES[p]}</p>
-      <Field label="النموذج" hint="اختياري، حتى 100 حرف"><Input dir="ltr" maxLength={100} value={model} onChange={(e) => setModel(e.target.value)} disabled={p === 'disabled'} data-testid="input-model" /></Field>
+      <Field label="النموذج" hint={p === 'gemini' ? 'نموذج Flash-Lite مجاني ثابت لمنع التحويل إلى نموذج مدفوع.' : 'اختياري، حتى 100 حرف'}>
+        <Input dir="ltr" maxLength={100} value={model} onChange={(e) => setModel(e.target.value)} disabled={p === 'disabled' || p === 'gemini'} data-testid="input-model" />
+      </Field>
       <Button type="submit" disabled={saving} data-testid="button-save-translation">{saving ? 'جارٍ الحفظ...' : 'حفظ'}</Button>
     </form>
   );
