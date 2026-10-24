@@ -1,9 +1,8 @@
 import { Router, type IRouter } from "express";
-import { rateLimit } from "express-rate-limit";
 import {
   GetDashboardResponse, GetMessagesQueryParams, GetMessagesResponse, GetLogsQueryParams, GetLogsResponse,
   RetryMessageParams, SaveSettingsBody, GetSettingsResponse, GetMarketResponse,
-  SendPreviewMessageBody, SendPreviewMessageResponse, ControlWorkerBody, PreviewMessageBody, PreviewMessageResponse, GetServicesResponse, SubmitTelegramQrPasswordBody,
+  SendPreviewMessageBody, SendPreviewMessageResponse, ControlWorkerBody, PreviewMessageBody, PreviewMessageResponse, GetServicesResponse,
 } from "@workspace/api-zod";
 import { pool, channels, channel, messageHistory, logs, settings, setSetting, getSetting, audit, safeError } from "../../lib/store";
 import { botState, testDestination } from "../../lib/telegram-bot";
@@ -13,8 +12,13 @@ import { marketQuotes, refreshPrices } from "../../lib/market";
 import { compose } from "../../lib/composition";
 import { sendManualMessage } from "../../lib/telegram-manual-send";
 import { GEMINI_FREE_MODEL } from "../../lib/translation";
+import { createTelegramQrRouter } from "./telegram-qr";
 
 export const operationsRouter: IRouter = Router();
+operationsRouter.use(createTelegramQrRouter({
+  getState: () => qrState,
+  submitPassword: submitQrPassword,
+}));
 operationsRouter.get("/dashboard", async (_req, res) => {
   const config = await settings();
   const [list, recentMessages, recentLogs, counts, activity] = await Promise.all([
@@ -155,12 +159,3 @@ operationsRouter.get("/services", async (_req, res) => {
   ]));
 });
 operationsRouter.post("/telegram/qr", async (_req, res) => { res.json(await beginQr()); });
-operationsRouter.get("/telegram/qr", async (_req, res) => { res.json(qrState); });
-const qrPasswordLimit = rateLimit({
-  windowMs: 15 * 60 * 1000, limit: 5, standardHeaders: "draft-8", legacyHeaders: false,
-  message: { error: "محاولات التحقق كثيرة؛ ابدأ ربطاً جديداً بعد قليل" },
-});
-operationsRouter.post("/telegram/qr/2fa", qrPasswordLimit, async (req, res) => {
-  const { password } = SubmitTelegramQrPasswordBody.parse(req.body);
-  res.json(submitQrPassword(password));
-});

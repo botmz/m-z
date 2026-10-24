@@ -9,6 +9,8 @@ import { OneTimeSecretGate } from "../src/lib/one-time-secret-gate";
 import { decrypt, encrypt } from "../src/lib/auth";
 import { createHttpLogger } from "../src/lib/http-logger";
 import { signInWithQrCode } from "../src/lib/telegram-qr-sign-in";
+import { submitTelegramQrPassword } from "../src/lib/telegram-qr-password";
+import { createTelegramQrRouter } from "../src/routes/mz/telegram-qr";
 
 const credentials = { apiId: 123456, apiHash: "opaque-api-hash" };
 
@@ -172,4 +174,100 @@ test("the production HTTP request logger never records a submitted 2FA password"
 
   assert(output.length > 0, "the HTTP logger should have emitted a request record");
   assert(!output.join("").includes(password));
+});
+
+test("the QR 2FA HTTP endpoint accepts a corrected password, returns Telegram's Arabic retry state, and never leaks late secrets", async () => {
+  const rejectedPassword = "http-wrong-2fa-password-do-not-log";
+  const acceptedPassword = "http-correct-2fa-password-do-not-log";
+  const latePassword = "http-late-2fa-password-do-not-log";
+  const output: string[] = [];
+  const destination = new Writable({
+    write(chunk, _encoding, callback) {
+      output.push(chunk.toString());
+      callback();
+    },
+  });
+  const requestLogger = pino({ level: "info" }, destination);
+  const gate = new OneTimeSecretGate();
+  const abort = new AbortController();
+  const qrState = { status: "connecting", message: "", url: null as string | null, expiresAt: null as string | null };
+  const persisted: string[] = [];
+  const client = makeClient(async callbacks => {
+    for (;;) {
+      const password = await callbacks.password();
+      if (password === acceptedPassword) return;
+      const stop = await callbacks.onError(Object.assign(new Error("invalid password"), { errorMessage: "PASSWORD_HASH_INVALID" }));
+      if (stop) throw new Error("Telegram rejected authorization");
+    }
+  });
+  const flow = signInWithQrCode({
+    client,
+    credentials,
+    abortSignal: abort.signal,
+    passwordGate: gate,
+    qrState,
+    isCurrent: () => true,
+    persistEncryptedSession: async session => { persisted.push(session); },
+    auditAuthorization: async () => undefined,
+  });
+
+  const app = express();
+  app.use(createHttpLogger(requestLogger));
+  app.use(express.json());
+  app.use(createTelegramQrRouter({
+    getState: () => qrState,
+    submitPassword: password => submitTelegramQrPassword(password, { busy: true, state: qrState, gate }),
+  }));
+  app.use((error: Error & { status?: number }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    res.status(error.status ?? 500).json({ error: error.message });
+  });
+
+  const server = app.listen(0);
+  await once(server, "listening");
+  try {
+    const { port } = server.address() as AddressInfo;
+    const baseUrl = `http://127.0.0.1:${port}`;
+    const postPassword = (password: string) => fetch(`${baseUrl}/telegram/qr/2fa`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ password }),
+    });
+
+    await waitForPasswordPrompt(gate);
+    const rejectedResponse = await postPassword(rejectedPassword);
+    assert.equal(rejectedResponse.status, 200);
+    const confirmingAfterRejection = await rejectedResponse.json() as typeof qrState;
+    assert.equal(confirmingAfterRejection.status, "confirming");
+    assert(!JSON.stringify(confirmingAfterRejection).includes(rejectedPassword));
+
+    await waitForPasswordPrompt(gate);
+    const retryResponse = await fetch(`${baseUrl}/telegram/qr`);
+    const retryState = await retryResponse.json() as typeof qrState;
+    assert.equal(retryState.status, "needs_2fa");
+    assert.match(retryState.message, /كلمة المرور غير صحيحة/);
+    assert(!JSON.stringify(retryState).includes(rejectedPassword));
+
+    const acceptedResponse = await postPassword(acceptedPassword);
+    assert.equal(acceptedResponse.status, 200);
+    const confirmingAfterAcceptance = await acceptedResponse.json() as typeof qrState;
+    assert.equal(confirmingAfterAcceptance.status, "confirming");
+    await flow;
+    assert.deepEqual(persisted, ["mock-telegram-session"]);
+
+    const lateResponse = await postPassword(latePassword);
+    assert.equal(lateResponse.status, 409);
+    const lateBody = await lateResponse.text();
+    assert(!lateBody.includes(latePassword));
+  } finally {
+    abort.abort();
+    gate.cancel();
+    server.close();
+    await once(server, "close");
+  }
+
+  assert(output.length > 0, "the HTTP logger should have emitted request records");
+  const logs = output.join("");
+  for (const secret of [rejectedPassword, acceptedPassword, latePassword]) {
+    assert(!logs.includes(secret), `HTTP logs must not include submitted 2FA password: ${secret}`);
+  }
 });

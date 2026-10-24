@@ -8,6 +8,7 @@ import { acceptsMessage } from "./composition";
 import { validateTelegramApiCredentials } from "./telegram-api-credentials";
 import { OneTimeSecretGate } from "./one-time-secret-gate";
 import { signInWithQrCode } from "./telegram-qr-sign-in";
+import { submitTelegramQrPassword as acceptQrPassword } from "./telegram-qr-password";
 
 let client: TelegramClient | undefined;
 let starting: Promise<void> | undefined;
@@ -122,14 +123,7 @@ export async function beginQr() {
   return { ...qrState };
 }
 export function submitQrPassword(password: string) {
-  const gate = activePasswordGate;
-  if (!qrBusy || qrState.status !== "needs_2fa" || !gate?.isWaiting || !gate.submit(password)) {
-    const error = new Error("لا توجد خطوة تحقق بخطوتين تنتظر كلمة مرور؛ ابدأ ربط QR جديداً");
-    Object.assign(error, { status: 409 });
-    throw error;
-  }
-  Object.assign(qrState, { status: "confirming", message: "جارٍ التحقق من كلمة المرور مع Telegram", url: null, expiresAt: null });
-  return { ...qrState };
+  return acceptQrPassword(password, { busy: qrBusy, state: qrState, gate: activePasswordGate });
 }
 export async function testSource(source: Channel) {
   if (!readerConnected() || !client) return { ok: false, message: "يلزم تفويض جلسة MTProto من صفحة حالة الخدمات أولاً؛ Bot API لا يقرأ جميع القنوات العامة" };
