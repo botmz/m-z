@@ -110,6 +110,8 @@ export interface ChannelInput {
   username: string;
   enabled: boolean;
   translate: boolean;
+  /** Ignore the entire source message if it contains a visible or hidden link */
+  skipMessagesWithLinks: boolean;
   targetLanguage: string;
   attachSource: boolean;
   /** @maxLength 1000 */

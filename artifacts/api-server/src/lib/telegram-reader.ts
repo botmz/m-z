@@ -161,7 +161,7 @@ export async function ingest(source: Channel, message: Api.Message) {
   }
   const text = message.message ?? "";
   const hasPhoto = message.media instanceof Api.MessageMediaPhoto;
-  if (!acceptsMessage(source, text, hasPhoto)) return;
+  if (!acceptsMessage(source, text, hasPhoto, message.entities ?? [])) return;
   const connection = await pool.connect();
   try {
     await connection.query("BEGIN");

@@ -1,15 +1,15 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { GEMINI_FREE_MODEL, protectTokens, requestGeminiTranslation, restoreTokens } from "../src/lib/translation";
-import { acceptsMessage, sourceLink, splitText, originalHtml, escapeHtml, marketPriceLine } from "../src/lib/composition";
+import { acceptsMessage, containsLink, sourceLink, splitText, originalHtml, escapeHtml, marketPriceLine } from "../src/lib/composition";
 import { direction } from "../src/lib/market";
-import { normalizeUsername, sameTelegramUsername, pool, type Channel } from "../src/lib/store";
+import { channelRow, normalizeUsername, sameTelegramUsername, pool, type Channel } from "../src/lib/store";
 import { CreateChannelBody, SaveChannelRoutingBody } from "@workspace/api-zod";
 import { replaceSourceRouting } from "../src/lib/routing";
 
 const source: Channel = {
   id: 1, kind: "source", name: "Unit Test", username: "@unit_test", enabled: true,
-  translate: false, targetLanguage: "ar", attachSource: true, prefix: "", suffix: "",
+  translate: false, skipMessagesWithLinks: false, targetLanguage: "ar", attachSource: true, prefix: "", suffix: "",
   filter: "all", mediaMode: "include", translationFailure: "hold",
   marketEnabled: false, showGold: true, showBitcoin: true, marketOrder: "goldFirst",
   stalePolicy: "hide", format: "plain", status: "unverified", lastError: null,
@@ -76,6 +76,17 @@ test("private links, arbitrary URLs, users and malformed references are rejected
   for (const value of ["https://t.me/+abc", "https://evil.test/channel", "@a", "t.me/c/123/1", "x';DELETE"]) assert.throws(() => normalizeUsername(value));
 });
 test("disabled sources cannot enter routing", () => { assert(!acceptsMessage({ ...source, enabled: false }, "BUY BTC", false)); });
+test("source link filtering ignores linked messages while preserving unlinked ones", () => {
+  const sourceWithLinkFilter = { ...source, skipMessagesWithLinks: true };
+  assert(containsLink("Read https://example.com/report"));
+  assert(containsLink("Open the link", [{ className: "MessageEntityTextUrl", url: "https://example.com" }]));
+  assert(containsLink("example.com", [{ className: "MessageEntityUrl" }]));
+  assert(!containsLink("BTC/USD reached 80,000"));
+  assert(!acceptsMessage(sourceWithLinkFilter, "Trade setup https://example.com", false));
+  assert(!acceptsMessage(sourceWithLinkFilter, "More information", false, [{ className: "MessageEntityTextUrl", url: "https://example.com" }]));
+  assert(acceptsMessage(sourceWithLinkFilter, "Trade setup without a link", false));
+  assert(acceptsMessage(source, "Trade setup https://example.com", false));
+});
 test("recommendation filter matches Arabic and English but not unrelated text", () => {
   const s = { ...source, filter: "recommendations" as const };
   assert(acceptsMessage(s, "شراء الذهب هدف 1234", false));
@@ -116,6 +127,13 @@ test("original Telegram emphasis and text links preserve supported formatting", 
 test("channel input contract requires per-channel switches", () => {
   assert(CreateChannelBody.safeParse(source).success);
   assert(!CreateChannelBody.safeParse({ name: "incomplete", username: "@abcde" }).success);
+});
+test("legacy saved source configs default link filtering off", () => {
+  const legacy = channelRow({
+    id: 8, name: "Legacy source", username: "@legacy_source", enabled: true,
+    config: {}, status: "ready", last_error: null, last_message_at: null, created_at: new Date(),
+  }, "source");
+  assert.equal(legacy.skipMessagesWithLinks, false);
 });
 test("PostgreSQL allows explicitly selected many-to-many routing and prevents duplicate deliveries", async () => {
   const db = await pool.connect();

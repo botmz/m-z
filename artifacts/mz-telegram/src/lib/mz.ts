@@ -26,6 +26,7 @@ export const defaultChannel = (kind: 'source' | 'destination'): ChannelInput => 
   username: '',
   enabled: true,
   translate: false,
+  skipMessagesWithLinks: false,
   targetLanguage: 'ar',
   attachSource: false,
   prefix: '',

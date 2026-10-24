@@ -11,7 +11,7 @@ import { Empty, ErrorBox, PageHeader, Panel, RowsSkeleton, Sel, StatusBadge } fr
 import { reportError, reportResult, statusInfo } from '@/lib/mz';
 import { useFmt } from '@/lib/use-fmt';
 
-const STATUSES: [string, string][] = [['', 'كل الحالات'], ['sent', 'تم الإرسال'], ['failed', 'فشل'], ['pending', 'قيد الانتظار'], ['held', 'محتجزة'], ['retrying', 'إعادة محاولة تلقائية'], ['processing', 'قيد المعالجة'], ['sending', 'جارٍ الإرسال'], ['unknown', 'إرسال غير مؤكد']];
+const STATUSES: [string, string][] = [['', 'كل الحالات'], ['sent', 'تم الإرسال'], ['skipped', 'تم التجاهل'], ['failed', 'فشل'], ['pending', 'قيد الانتظار'], ['held', 'محتجزة'], ['retrying', 'إعادة محاولة تلقائية'], ['processing', 'قيد المعالجة'], ['sending', 'جارٍ الإرسال'], ['unknown', 'إرسال غير مؤكد']];
 
 export default function MessagesPage() {
   const qc = useQueryClient();

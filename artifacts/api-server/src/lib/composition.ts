@@ -12,8 +12,18 @@ export function marketPriceLine(symbol: string, price: number, quoteDirection: s
   const value = `${name} ${symbol}: ${price.toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 })} $ ${indicator}`;
   return stale ? `${value} • سعر قديم` : value;
 }
-export function acceptsMessage(source: Channel, text: string, hasPhoto: boolean) {
+export function containsLink(text: string, entities: Array<{ className?: string; url?: string }> = []) {
+  if (entities.some((entity) => entity.className === "MessageEntityUrl" || entity.className === "MessageEntityTextUrl")) return true;
+  return /(?:\bhttps?:\/\/|\btg:\/\/|\bwww\.)[^\s<>"'،]+|\b(?:t\.me|telegram\.me)\/[^\s<>"'،]+/i.test(text);
+}
+export function acceptsMessage(
+  source: Channel,
+  text: string,
+  hasPhoto: boolean,
+  entities: Array<{ className?: string; url?: string }> = [],
+) {
   if (!source.enabled) return false;
+  if (source.skipMessagesWithLinks && containsLink(text, entities)) return false;
   if (source.filter === "text" && hasPhoto) return false;
   if (source.filter === "recommendations" && !/(شراء|بيع|هدف|وقف|دخول|توصية|\bbuy\b|\bsell\b|entry|take.?profit|stop.?loss)/i.test(text)) return false;
   return Boolean(text || (hasPhoto && source.mediaMode === "include"));

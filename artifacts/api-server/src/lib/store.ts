@@ -18,7 +18,7 @@ export async function settings(): Promise<Settings> {
 }
 export function safeError(error: unknown): string {
   let message = error instanceof Error ? error.message : "خطأ غير معروف";
-  for (const key of ["BOT_TOKEN", "API_HASH", "API_ID", "SESSION_SECRET", "ADMIN_INITIAL_PASSWORD", "DEEPL_API_KEY", "AI_INTEGRATIONS_OPENAI_API_KEY"]) {
+  for (const key of ["BOT_TOKEN", "API_HASH", "API_ID", "SESSION_SECRET", "ADMIN_INITIAL_PASSWORD", "DEEPL_API_KEY", "GEMINI_API_KEY", "AI_INTEGRATIONS_OPENAI_API_KEY"]) {
     const value = process.env[key];
     if (value) message = message.split(value).join("[محجوب]");
   }
@@ -31,7 +31,7 @@ export type Channel = ChannelInput & {
   id: number; status: string; lastError: string | null; lastMessageAt: string | null; createdAt: string;
 };
 export function channelRow(row: Record<string, any>, kind: "source" | "destination"): Channel {
-  return { ...row.config, id: kind === "destination" ? -row.id : row.id, kind, name: row.name, username: row.username, enabled: row.enabled, status: row.status,
+  return { ...row.config, skipMessagesWithLinks: row.config?.skipMessagesWithLinks ?? false, id: kind === "destination" ? -row.id : row.id, kind, name: row.name, username: row.username, enabled: row.enabled, status: row.status,
     lastError: row.last_error, lastMessageAt: row.last_message_at?.toISOString() ?? null, createdAt: row.created_at.toISOString() } as Channel;
 }
 export async function channels(): Promise<Channel[]> {

@@ -1,7 +1,7 @@
 import { pool, getSetting, setSetting, settings, audit, safeError, channel, sameTelegramUsername } from "./store";
 import { connectReader, readerConnected, readerState, catchUp, downloadPhoto } from "./telegram-reader";
 import { botApi, botState, testBot, TelegramApiError, AmbiguousSendError } from "./telegram-bot";
-import { compose, splitText } from "./composition";
+import { compose, containsLink, splitText } from "./composition";
 import { refreshPrices } from "./market";
 import { logger } from "./logger";
 import type { PoolClient } from "@workspace/db";
@@ -27,6 +27,16 @@ async function processDelivery(id: number) {
   const destination = await channel(-delivery.destination_id);
   if (!sameTelegramUsername(source.username, delivery.source_key) || !sameTelegramUsername(destination.username, delivery.destination_key)) {
     await pool.query("UPDATE message_deliveries SET status='held',error=$2,updated_at=now() WHERE id=$1", [id, "تغير معرف القناة بعد استقبال الرسالة؛ أُوقف الإرسال لحماية الوجهة"]);
+    return;
+  }
+  if (source.skipMessagesWithLinks && containsLink(delivery.text, delivery.entities ?? [])) {
+    const partiallySent = (delivery.telegram_message_ids ?? []).length > 0;
+    const status = partiallySent ? "held" : "skipped";
+    const reason = partiallySent
+      ? "توقف استكمال الرسالة لأن المصدر يتجاهل الرسائل التي تحتوي على روابط؛ أُرسلت أجزاء سابقة"
+      : "تم تجاوز الرسالة لأن المصدر مضبوط على تجاهل الرسائل التي تحتوي على روابط";
+    await pool.query("UPDATE message_deliveries SET status=$2,error=$3,updated_at=now() WHERE id=$1", [id, status, reason]);
+    await pool.query("INSERT INTO delivery_attempts(delivery_id,status,detail) VALUES($1,$2,$3)", [id, status, reason]);
     return;
   }
   const route = await pool.query("SELECT 1 FROM routing_rules WHERE source_id=$1 AND destination_id=$2", [delivery.source_id, delivery.destination_id]);
@@ -59,9 +69,13 @@ async function processDelivery(id: number) {
     if (!plan.length) throw new Error("لا توجد رسالة نصية أو صورة قابلة للنشر");
     for (let index = sentIds.length; index < plan.length; index++) {
       if (!await getSetting("worker_enabled", false)) throw Object.assign(new Error("تم إيقاف العامل مؤقتاً"), { held: true });
-      const current = await pool.query(`SELECT 1 FROM source_channels s JOIN routing_rules r ON r.source_id=s.id
+      const current = await pool.query(`SELECT s.config->>'skipMessagesWithLinks' AS "skipMessagesWithLinks"
+        FROM source_channels s JOIN routing_rules r ON r.source_id=s.id
         JOIN destination_channels d ON d.id=r.destination_id WHERE s.id=$1 AND d.id=$2 AND s.enabled AND d.enabled`, [source.id, delivery.destination_id]);
       if (!current.rows.length) throw Object.assign(new Error("تم تعطيل قناة أو حذف قاعدة الربط"), { held: true });
+      if (current.rows[0].skipMessagesWithLinks === "true" && containsLink(delivery.text, delivery.entities ?? [])) {
+        throw Object.assign(new Error("تم إيقاف الإرسال لأن المصدر أصبح يتجاهل الرسائل التي تحتوي على روابط"), { held: true });
+      }
       const part = plan[index]!;
       let photo: Buffer | undefined;
       if (part.method === "sendPhoto") photo = await downloadPhoto(source, delivery.telegram_message_id);
