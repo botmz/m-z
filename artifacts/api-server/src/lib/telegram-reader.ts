@@ -9,6 +9,7 @@ import { validateTelegramApiCredentials } from "./telegram-api-credentials";
 import { OneTimeSecretGate } from "./one-time-secret-gate";
 import { signInWithQrCode } from "./telegram-qr-sign-in";
 import { submitTelegramQrPassword as acceptQrPassword } from "./telegram-qr-password";
+import { recoverTelegramReaderSession } from "./telegram-session-recovery";
 
 let client: TelegramClient | undefined;
 let starting: Promise<void> | undefined;
@@ -34,18 +35,18 @@ export async function connectReader() {
   if (qrBusy) return;
   if (starting) return starting;
   starting = (async () => {
-    const stored = await getSetting<string>("telegram_session", "");
-    if (!stored) return;
-    try {
-      if (!client) client = newClient(decrypt(stored));
-      if (!client.connected) await client.connect();
-      if (!await client.isUserAuthorized()) throw new Error("جلسة Telegram غير صالحة؛ أعد التفويض");
-      client.removeEventHandler(onMessage, messageFilter);
-      client.addEventHandler(onMessage, messageFilter);
-      Object.assign(readerState, { status: "connected", detail: "جلسة MTProto مفوضة ومتصلة", checkedAt: new Date().toISOString() });
-    } catch (e) {
-      Object.assign(readerState, { status: "error", detail: safeError(e), checkedAt: new Date().toISOString() });
-      await audit("error", "reader", safeError(e));
+    const restored = await recoverTelegramReaderSession({
+      loadEncryptedSession: () => getSetting<string>("telegram_session", ""),
+      decryptSession: decrypt,
+      createClient: session => newClient(session),
+      attachHandlers: restoredClient => restoredClient.addEventHandler(onMessage, messageFilter),
+      state: readerState,
+      reportError: message => audit("error", "reader", message),
+    });
+    if (restored) {
+      const previousClient = client;
+      client = restored;
+      if (previousClient && previousClient !== restored) void previousClient.disconnect().catch(() => undefined);
     }
   })().finally(() => { starting = undefined; });
   return starting;
