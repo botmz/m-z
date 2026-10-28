@@ -382,16 +382,17 @@ components:
         message: { type: string }
     ChannelInput:
       type: object
-      required: [kind, name, username, enabled, translate, skipMessagesWithLinks, targetLanguage, attachSource, prefix, suffix, filter, mediaMode, translationFailure, marketEnabled, showGold, showBitcoin, marketOrder, stalePolicy, format]
+      required: [kind, name, username, enabled, translate, skipMessagesWithLinks, targetLanguage, attachSource, signatureEnabled, prefix, suffix, filter, mediaMode, translationFailure, marketEnabled, showGold, showBitcoin, marketOrder, stalePolicy, format]
       properties:
         kind: { type: string, enum: [source, destination] }
         name: { type: string, minLength: 1, maxLength: 120 }
         username: { type: string, minLength: 3, maxLength: 200 }
         enabled: { type: boolean }
         translate: { type: boolean }
-        skipMessagesWithLinks: { type: boolean, description: Ignore the entire source message if it contains a visible or hidden link }
+        skipMessagesWithLinks: { type: boolean, description: Remove links from the source message while preserving other text and media }
         targetLanguage: { type: string, default: ar }
         attachSource: { type: boolean }
+        signatureEnabled: { type: boolean, description: Append the destination's fixed message after the source content }
         prefix: { type: string, maxLength: 1000 }
         suffix: { type: string, maxLength: 1000 }
         filter: { type: string, enum: [all, text, recommendations] }

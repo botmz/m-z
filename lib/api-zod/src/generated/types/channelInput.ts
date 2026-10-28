@@ -26,10 +26,12 @@ export interface ChannelInput {
   username: string;
   enabled: boolean;
   translate: boolean;
-  /** Ignore the entire source message if it contains a visible or hidden link */
+  /** Remove links from the source message while preserving other text and media */
   skipMessagesWithLinks: boolean;
   targetLanguage: string;
   attachSource: boolean;
+  /** Append the destination's fixed message after the source content */
+  signatureEnabled: boolean;
   /** @maxLength 1000 */
   prefix: string;
   /** @maxLength 1000 */

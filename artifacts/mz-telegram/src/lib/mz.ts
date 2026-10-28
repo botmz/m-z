@@ -29,6 +29,7 @@ export const defaultChannel = (kind: 'source' | 'destination'): ChannelInput => 
   skipMessagesWithLinks: false,
   targetLanguage: 'ar',
   attachSource: false,
+  signatureEnabled: false,
   prefix: '',
   suffix: '',
   filter: 'all',

@@ -31,7 +31,9 @@ export type Channel = ChannelInput & {
   id: number; status: string; lastError: string | null; lastMessageAt: string | null; createdAt: string;
 };
 export function channelRow(row: Record<string, any>, kind: "source" | "destination"): Channel {
-  return { ...row.config, skipMessagesWithLinks: row.config?.skipMessagesWithLinks ?? false, id: kind === "destination" ? -row.id : row.id, kind, name: row.name, username: row.username, enabled: row.enabled, status: row.status,
+  return { ...row.config, skipMessagesWithLinks: row.config?.skipMessagesWithLinks ?? false,
+    signatureEnabled: row.config?.signatureEnabled ?? (kind === "destination" && Boolean(row.config?.suffix)),
+    id: kind === "destination" ? -row.id : row.id, kind, name: row.name, username: row.username, enabled: row.enabled, status: row.status,
     lastError: row.last_error, lastMessageAt: row.last_message_at?.toISOString() ?? null, createdAt: row.created_at.toISOString() } as Channel;
 }
 export async function channels(): Promise<Channel[]> {

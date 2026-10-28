@@ -94,6 +94,9 @@ export async function compose(
     : source.suffix;
   const linkCleanedSuffix = source.skipMessagesWithLinks ? removeTextLinks(sourceSuffix).text : sourceSuffix;
   if (linkCleanedSuffix) suffix.push(linkCleanedSuffix);
+  if (destination.signatureEnabled && destination.suffix.trim()) {
+    suffix.push(destination.suffix.trim());
+  }
   const channelUrl = sourceLink(source.username);
   const existingText = [...prefix, translated.text, ...suffix].join("\n").toLowerCase();
   if (source.attachSource && !hideSourceLink && !source.skipMessagesWithLinks && !existingText.includes(channelUrl.toLowerCase())) {

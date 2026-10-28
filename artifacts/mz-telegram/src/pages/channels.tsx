@@ -200,6 +200,7 @@ function ChannelForm({
               <Field label="الصيغة"><Sel value={f.format} onChange={(e) => set('format', e.target.value as ChannelInput['format'])} options={opts(formatLabels)} data-testid="select-format" /></Field>
               <Field label="الوسائط"><Sel value={f.mediaMode} onChange={(e) => set('mediaMode', e.target.value as ChannelInput['mediaMode'])} options={opts(mediaLabels)} /></Field>
               <div className="sm:col-span-2"><Toggle id="market" label="إرفاق أسعار السوق" checked={f.marketEnabled} onChange={(v) => set('marketEnabled', v)} /></div>
+              <div className="sm:col-span-2"><Toggle id="signature-enabled" label="إضافة التوقيع الثابت بعد الرسالة" checked={f.signatureEnabled} onChange={(v) => set('signatureEnabled', v)} /></div>
               {f.marketEnabled && (
                 <>
                   <Toggle id="gold" label="إظهار الذهب" checked={f.showGold} onChange={(v) => set('showGold', v)} />
@@ -211,7 +212,10 @@ function ChannelForm({
             </>
           )}
           <Field label="بادئة الرسالة" className="sm:col-span-2"><Textarea rows={2} maxLength={1000} value={f.prefix} onChange={(e) => set('prefix', e.target.value)} data-testid="input-prefix" /></Field>
-          <Field label="خاتمة الرسالة" className="sm:col-span-2"><Textarea rows={2} maxLength={1000} value={f.suffix} onChange={(e) => set('suffix', e.target.value)} data-testid="input-suffix" /></Field>
+          <Field label={src ? "خاتمة المصدر" : "نص التوقيع الثابت"} className="sm:col-span-2">
+            <Textarea rows={2} maxLength={1000} value={f.suffix} onChange={(e) => set('suffix', e.target.value)} data-testid="input-suffix" />
+            {!src && <p className="mt-1 text-xs text-muted-foreground">يُضاف بعد محتوى الرسالة إلى هذه الوجهة فقط عند تفعيل التوقيع.</p>}
+          </Field>
         </div>
         <DialogFooter className="gap-2">
           <Button variant="outline" onClick={onClose}>إلغاء</Button>

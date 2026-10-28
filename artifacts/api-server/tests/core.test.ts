@@ -15,7 +15,7 @@ import { resolveWorkerHealth, WORKER_HEARTBEAT_STALE_AFTER_MS } from "../src/lib
 
 const source: Channel = {
   id: 1, kind: "source", name: "Unit Test", username: "@unit_test", enabled: true,
-  translate: false, skipMessagesWithLinks: false, targetLanguage: "ar", attachSource: true, prefix: "", suffix: "",
+  translate: false, skipMessagesWithLinks: false, targetLanguage: "ar", attachSource: true, signatureEnabled: false, prefix: "", suffix: "",
   filter: "all", mediaMode: "include", translationFailure: "hold",
   marketEnabled: false, showGold: true, showBitcoin: true, marketOrder: "goldFirst",
   stalePolicy: "hide", format: "plain", status: "unverified", lastError: null,
@@ -388,6 +388,16 @@ test("a successful provider translation is the body sent by message composition"
   );
   assert.equal(translated.text, "ارتفع سعر الذهب 2.5 بالمئة.");
   assert.equal(translated.translationStatus, "translated");
+});
+test("destination signature is appended only when enabled", async () => {
+  const destination: Channel = {
+    ...source, id: -2, kind: "destination", name: "Destination", username: "@destination",
+    attachSource: false, suffix: "للتواصل: @owner", signatureEnabled: true,
+  };
+  const enabled = await compose({ ...source, attachSource: false }, destination, "محتوى الرسالة");
+  assert.equal(enabled.text, "محتوى الرسالة\n\nللتواصل: @owner");
+  const disabled = await compose({ ...source, attachSource: false }, { ...destination, signatureEnabled: false }, "محتوى الرسالة");
+  assert.equal(disabled.text, "محتوى الرسالة");
 });
 test("source-message fan-out reuses a translated body and does not quickly repeat a failed request", async () => {
   const previousSettings = await settings();
