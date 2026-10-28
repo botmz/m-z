@@ -1,4 +1,4 @@
-import { pool, getSetting, setSetting, settings, audit, safeError, channel, sameTelegramUsername } from "./store";
+import { pool, getSetting, setSetting, settings, audit, safeError, channel, sameTelegramUsername, claimDelivery } from "./store";
 import { connectReader, readerConnected, readerState, catchUp, downloadSourceMedia } from "./telegram-reader";
 import { botApi, botState, testBot, TelegramApiError, AmbiguousSendError } from "./telegram-bot";
 import { compose, createSendPlan } from "./composition";
@@ -69,8 +69,9 @@ async function processDelivery(id: number) {
   const sentIds: number[] = delivery.telegram_message_ids ?? [];
   let attemptedSend = false;
   try {
-    await pool.query("UPDATE message_deliveries SET status='processing',attempts=attempts+1,updated_at=now() WHERE id=$1", [id]);
-    await pool.query("INSERT INTO delivery_attempts(delivery_id,status,detail) VALUES($1,'processing',$2)", [id, `محاولة ${delivery.attempts + 1}`]);
+    if (!await claimDelivery(id)) return;
+    delivery.attempts += 1;
+    await pool.query("INSERT INTO delivery_attempts(delivery_id,status,detail) VALUES($1,'processing',$2)", [id, `محاولة ${delivery.attempts}`]);
     let plan: Part[] | null = Array.isArray(delivery.send_plan) ? delivery.send_plan : null;
     if (plan?.length && (
       Boolean(plan[0]?.hideSourceLink) !== hideSourceLink ||
@@ -155,9 +156,9 @@ async function processDelivery(id: number) {
     const ambiguous = e instanceof AmbiguousSendError || (attemptedSend && !(e instanceof TelegramApiError));
     const permanent = e instanceof TelegramApiError && [400, 401, 403, 404].includes(e.code);
     const held = e.translationHeld || e.held;
-    const status = ambiguous ? "unknown" : held ? "held" : permanent || delivery.attempts + 1 >= config.maxAttempts ? "failed" : "retrying";
+    const status = ambiguous ? "unknown" : held ? "held" : permanent || delivery.attempts >= config.maxAttempts ? "failed" : "retrying";
     const floodDelay = e instanceof TelegramApiError ? e.retryAfter : typeof e.seconds === "number" ? e.seconds : 0;
-    const delay = floodDelay > 0 ? floodDelay + 1 : Math.min(3600, 15 * 2 ** delivery.attempts);
+    const delay = floodDelay > 0 ? floodDelay + 1 : Math.min(3600, 15 * 2 ** Math.max(0, delivery.attempts - 1));
     if (floodDelay > 0) blockedUntil = Date.now() + delay * 1000;
     const error = ambiguous ? "حالة إرسال غير مؤكدة؛ لا إعادة تلقائية لتجنب التكرار. راجع القناة وسجل معرّفات الرسائل قبل التدخل اليدوي." : safeError(e);
     await pool.query(`UPDATE message_deliveries SET status=$2,error=$3,next_attempt_at=now()+$4*interval '1 second',

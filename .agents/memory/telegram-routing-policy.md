@@ -7,6 +7,8 @@ Only explicitly saved source-to-destination relationships may create deliveries.
 
 The option to hide a source reference belongs to an individual saved source-to-destination route. It must not affect another destination for the same source, and it should remove only references to that source while preserving unrelated links.
 
-**Why:** The owner repeatedly asked to choose destinations manually and not send every source to every destination.
+Each source-message/destination pair must produce at most one delivery, including when workers race. Ambiguous Telegram sends must not be automatically retried because Telegram may already have accepted them.
 
-**How to apply:** Preserve explicit routing at the UI, API, and queue layers; keep source-scoped updates isolated; store hide-source settings per route; require owner confirmation before backfilling old messages.
+**Why:** The owner asked to choose destinations manually, avoid broadcasting, and prevent a highlighted message from being published more than once.
+
+**How to apply:** Preserve explicit routing at the UI, API, and queue layers; atomically claim a queued delivery before sending; keep ambiguous sends for manual inspection; keep source-scoped updates isolated; store hide-source settings per route; require owner confirmation before backfilling old messages.

@@ -13,6 +13,16 @@ export async function getSetting<T>(key: string, fallback: T): Promise<T> {
 export async function setSetting(key: string, value: unknown) {
   await pool.query("INSERT INTO app_settings(key,value) VALUES($1,$2) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value", [key, JSON.stringify(value)]);
 }
+export async function claimDelivery(id: number): Promise<boolean> {
+  const { rows } = await pool.query(
+    `UPDATE message_deliveries
+     SET status='processing',attempts=attempts+1,updated_at=now()
+     WHERE id=$1 AND status IN ('pending','retrying')
+     RETURNING id`,
+    [id],
+  );
+  return rows.length === 1;
+}
 export async function settings(): Promise<Settings> {
   return { ...defaults, ...await getSetting<Partial<Settings>>("settings", {}) };
 }

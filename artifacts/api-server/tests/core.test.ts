@@ -7,7 +7,7 @@ import {
 import { acceptsMessage, containsLink, sourceLink, splitText, originalHtml, escapeHtml, marketPriceLine, compose, createSendPlan } from "../src/lib/composition";
 import { removeSourceReferences, removeTextLinks } from "../src/lib/source-reference";
 import { direction } from "../src/lib/market";
-import { channelRow, normalizeUsername, sameTelegramUsername, pool, getSetting, setSetting, settings, type Channel } from "../src/lib/store";
+import { channelRow, normalizeUsername, sameTelegramUsername, pool, getSetting, setSetting, settings, claimDelivery, type Channel } from "../src/lib/store";
 import { CreateChannelBody, SaveChannelRoutingBody } from "@workspace/api-zod";
 import { replaceSourceRouting } from "../src/lib/routing";
 import { isVideoDocument } from "../src/lib/telegram-reader";
@@ -581,6 +581,42 @@ test("PostgreSQL allows explicitly selected many-to-many routing and prevents du
   } finally {
     await db.query("ROLLBACK"); // No test channels/messages persist.
     db.release();
+  }
+});
+test("concurrent workers can claim a queued delivery only once", async () => {
+  const suffix = `${process.pid}_${Date.now()}`;
+  let sourceId: number | undefined;
+  let destinationId: number | undefined;
+  let messageId: number | undefined;
+  let deliveryId: number | undefined;
+  try {
+    sourceId = (await pool.query(
+      "INSERT INTO source_channels(name,username,enabled) VALUES($1,$2,false) RETURNING id",
+      [`claim source ${suffix}`, `@mz_claim_src_${suffix}`],
+    )).rows[0].id;
+    destinationId = (await pool.query(
+      "INSERT INTO destination_channels(name,username,enabled) VALUES($1,$2,false) RETURNING id",
+      [`claim destination ${suffix}`, `@mz_claim_dst_${suffix}`],
+    )).rows[0].id;
+    messageId = (await pool.query(
+      "INSERT INTO messages(source_id,source_key,telegram_message_id,text) VALUES($1,$2,1,'claim test') RETURNING id",
+      [sourceId, `@mz_claim_src_${suffix}`],
+    )).rows[0].id;
+    deliveryId = (await pool.query(
+      `INSERT INTO message_deliveries(message_id,destination_id,destination_key,next_attempt_at)
+       VALUES($1,$2,$3,now()+interval '1 day') RETURNING id`,
+      [messageId, destinationId, `@mz_claim_dst_${suffix}`],
+    )).rows[0].id;
+
+    const results = await Promise.all([claimDelivery(deliveryId), claimDelivery(deliveryId)]);
+    assert.equal(results.filter(Boolean).length, 1);
+    const state = await pool.query("SELECT status,attempts FROM message_deliveries WHERE id=$1", [deliveryId]);
+    assert.deepEqual(state.rows[0], { status: "processing", attempts: 1 });
+  } finally {
+    if (deliveryId) await pool.query("DELETE FROM message_deliveries WHERE id=$1", [deliveryId]);
+    if (messageId) await pool.query("DELETE FROM messages WHERE id=$1", [messageId]);
+    if (destinationId) await pool.query("DELETE FROM destination_channels WHERE id=$1", [destinationId]);
+    if (sourceId) await pool.query("DELETE FROM source_channels WHERE id=$1", [sourceId]);
   }
 });
 test("editing a source replaces only its selected destinations and rolls back invalid choices", async () => {
