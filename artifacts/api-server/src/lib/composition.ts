@@ -25,7 +25,7 @@ export function acceptsMessage(
 ) {
   if (!source.enabled) return false;
   if (source.filter === "text" && hasMedia) return false;
-  if (source.filter === "recommendations" && !/(شراء|بيع|هدف|وقف|دخول|توصية|\bbuy\b|\bsell\b|entry|take.?profit|stop.?loss)/i.test(text)) return false;
+  if (source.filter === "recommendations" && text && !/(شراء|بيع|هدف|وقف|دخول|توصية|\bbuy\b|\bsell\b|entry|take.?profit|stop.?loss)/i.test(text)) return false;
   return Boolean(text || (hasMedia && source.mediaMode === "include"));
 }
 // Preserve non-overlapping Telegram emphasis and text links without accepting HTML from message text.
@@ -133,7 +133,6 @@ export function createSendPlan(text: string, html: string, hasMedia: boolean, us
       plan.push(...splitText(text).map((part) => ({
         method: "sendMessage" as const,
         text: part,
-        ...(useHtml ? { html: escapeHtml(part) } : {}),
       })));
     }
   }

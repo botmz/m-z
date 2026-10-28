@@ -233,7 +233,7 @@ export function sendableMediaKind(message: Api.Message): "photo" | "video" | und
 export async function downloadSourceMedia(source: Channel, messageId: number): Promise<SourceMedia> {
   if (!readerConnected() || !client) throw new Error("جلسة قراءة Telegram غير متصلة");
   const messages = await client.getMessages(source.username, { ids: [messageId] });
-  if (!messages[0] || messages[0].noforwards) throw new Error("الصورة غير متاحة أو محمية من إعادة النشر");
+  if (!messages[0] || messages[0].noforwards) throw new Error("الوسيط غير متاح أو محمي من إعادة النشر");
   const message = messages[0];
   const kind = sendableMediaKind(message);
   if (!kind) throw new Error("الوسيط لم يعد صورة أو فيديو قابلاً للإرسال");

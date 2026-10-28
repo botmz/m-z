@@ -68,7 +68,7 @@ function cleanLine(units: MappedUnit[], removeDanglingAtStart: boolean, removeDa
       collapsed.push({ ...unit, value: " " });
       continue;
     }
-    if (/^[,،;؛:!?؟]$/u.test(unit.value)) {
+    if (/^[.,،;؛:!?؟]$/u.test(unit.value)) {
       while (collapsed.at(-1)?.value === " ") collapsed.pop();
     }
     collapsed.push(unit);

@@ -1,7 +1,7 @@
 import { pool, getSetting, setSetting, settings, audit, safeError, channel, sameTelegramUsername } from "./store";
 import { connectReader, readerConnected, readerState, catchUp, downloadSourceMedia } from "./telegram-reader";
 import { botApi, botState, testBot, TelegramApiError, AmbiguousSendError } from "./telegram-bot";
-import { compose, splitText } from "./composition";
+import { compose, createSendPlan } from "./composition";
 import { translate } from "./translation";
 import { refreshPrices } from "./market";
 import { logger } from "./logger";
@@ -66,17 +66,9 @@ async function processDelivery(id: number) {
         hideSourceLink,
         (text, sourceChannel) => translate(text, sourceChannel, delivery.message_id),
       );
-      plan = [];
       const hasMedia = delivery.has_photo && source.mediaMode === "include";
       const canHtml = destination.format === "html";
-      if (hasMedia && composed.text.length <= 1024) {
-        plan.push({ method: "sendMedia", text: composed.text, html: canHtml ? composed.html : undefined });
-      } else {
-        if (hasMedia) plan.push({ method: "sendMedia", text: "" });
-        if (composed.text.length <= 4000) {
-          if (composed.text) plan.push({ method: "sendMessage", text: composed.text, html: canHtml ? composed.html : undefined });
-        } else plan.push(...splitText(composed.text).map(text => ({ method: "sendMessage" as const, text })));
-      }
+      plan = createSendPlan(composed.text, composed.html, hasMedia, canHtml);
       if (!composed.text.trim() && !hasMedia) {
         const reason = "تم تجاوز المنشور بعد إزالة الروابط أو إحالة المصدر لعدم بقاء محتوى قابل للإرسال";
         await pool.query("UPDATE message_deliveries SET status='skipped',error=$2,updated_at=now() WHERE id=$1", [id, reason]);

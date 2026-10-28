@@ -4,12 +4,13 @@ import {
   GEMINI_FREE_MODEL, GEMINI_FREE_MODELS, geminiHttpError, protectTokens, requestGeminiTranslation,
   requestOpenAITranslation, restoreTokens, translationServiceState, translate, isEnglishText,
 } from "../src/lib/translation";
-import { acceptsMessage, containsLink, sourceLink, splitText, originalHtml, escapeHtml, marketPriceLine, compose } from "../src/lib/composition";
+import { acceptsMessage, containsLink, sourceLink, splitText, originalHtml, escapeHtml, marketPriceLine, compose, createSendPlan } from "../src/lib/composition";
 import { removeSourceReferences, removeTextLinks } from "../src/lib/source-reference";
 import { direction } from "../src/lib/market";
 import { channelRow, normalizeUsername, sameTelegramUsername, pool, getSetting, setSetting, settings, type Channel } from "../src/lib/store";
 import { CreateChannelBody, SaveChannelRoutingBody } from "@workspace/api-zod";
 import { replaceSourceRouting } from "../src/lib/routing";
+import { isVideoDocument } from "../src/lib/telegram-reader";
 
 const source: Channel = {
   id: 1, kind: "source", name: "Unit Test", username: "@unit_test", enabled: true,
@@ -165,7 +166,7 @@ test("link cleanup removes visible URLs, keeps hidden-link words, and preserves 
   );
   assert.equal(
     removeTextLinks("خبر عربي https://t.me/news/10، ثم https://example.com/a\nwww.example.org").text,
-    "خبر عربي ثم",
+    "خبر عربي، ثم",
   );
   const hiddenText = "Read the report";
   const hidden = removeTextLinks(hiddenText, [
@@ -183,6 +184,7 @@ test("link cleanup removes visible URLs, keeps hidden-link words, and preserves 
   assert.equal(removeTextLinks("https://only.example").text, "");
   assert(acceptsMessage(source, "", true), "media remains eligible when URL removal empties its caption");
   assert(!acceptsMessage(source, "", false), "an empty text-only post has no sendable content");
+  assert(acceptsMessage({ ...source, filter: "recommendations" }, "", true), "an empty link-stripped caption must not suppress attached media");
 });
 test("language detection translates English only and leaves Arabic and Spanish unchanged", async () => {
   assert(isEnglishText("The price of gold rose sharply today."));
@@ -238,6 +240,33 @@ test("text-only filter excludes images and image-only sources respect media poli
   assert(!acceptsMessage({ ...source, filter: "text" }, "caption", true));
   assert(!acceptsMessage({ ...source, mediaMode: "textOnly" }, "", true));
   assert(acceptsMessage(source, "", true));
+});
+test("video captions remain eligible and media-only plans still send the original video", async () => {
+  assert(isVideoDocument({ mimeType: "video/mp4" }));
+  assert(isVideoDocument({ mimeType: "application/octet-stream", attributes: [{ className: "DocumentAttributeVideo" }] }));
+  assert(!isVideoDocument({ mimeType: "image/jpeg" }));
+  assert(acceptsMessage(source, "", true), "a video with an empty caption remains eligible");
+  assert.deepEqual(createSendPlan("", "", true, false), [{ method: "sendMedia", text: "" }]);
+
+  const cleaned = removeTextLinks("Gold rose 2.5% https://example.com");
+  const destination: Channel = { ...source, id: -2, kind: "destination", username: "@destination", attachSource: false };
+  const composed = await compose(
+    { ...source, translate: true, skipMessagesWithLinks: true, attachSource: false },
+    destination,
+    cleaned.text,
+    undefined,
+    cleaned.entities,
+    false,
+    async () => ({ text: "ارتفع الذهب 2.5%", status: "translated" }),
+  );
+  assert.equal(composed.text, "ارتفع الذهب 2.5%");
+  assert.deepEqual(createSendPlan(composed.text, composed.html, true, true), [
+    { method: "sendMedia", text: "ارتفع الذهب 2.5%", html: "ارتفع الذهب 2.5%" },
+  ]);
+  const longCaption = createSendPlan("x".repeat(1100), "x".repeat(1100), true, true);
+  assert.equal(longCaption[0]?.method, "sendMedia");
+  assert.equal(longCaption[0]?.text, "");
+  assert.equal(longCaption[1]?.method, "sendMessage");
 });
 test("source link uses real public message identifiers", () => {
   assert.equal(sourceLink("@abcde", 234), "https://t.me/abcde/234");
