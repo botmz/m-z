@@ -118,6 +118,7 @@ operationsRouter.post("/preview", async (req, res) => {
     WHERE source_id=$1 AND destination_id=$2`, [source.id, -destination.id]);
   const routeContent = normalizeRouteContentSettings(routes.rows[0]?.content_settings, !source.skipMessagesWithLinks);
   const preview = await compose(source, destination, input.text, undefined, [], Boolean(routes.rows[0]?.hide_source_link), undefined, routeContent);
+  if (!preview.text.trim()) preview.warnings.push("لا تحتوي معاينة النص على محتوى؛ قد يُرسل وسيط فقط إذا كان مسموحاً في هذا المسار.");
   if (!routes.rows.length) preview.warnings.push("لا يوجد توجيه تلقائي محفوظ بين المصدر والوجهة؛ الإرسال اليدوي من هذه الصفحة يرسل هذه الرسالة فقط.");
   res.json(PreviewMessageResponse.parse(preview));
 });

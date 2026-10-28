@@ -200,7 +200,7 @@ export default function RoutingPage() {
                         <button
                           type="button"
                           aria-pressed={on}
-                          onClick={() => flip(route)}
+                          onClick={() => flip(route, s.skipMessagesWithLinks)}
                           data-testid={`toggle-route-${s.id}-${d.id}`}
                           className={cn(
                             'rounded-md border px-3 py-1.5 text-sm font-semibold transition-colors',
@@ -249,7 +249,11 @@ export default function RoutingPage() {
                                 </div>
                                 {(() => {
                                   const value = content[route] ?? defaults(!s.skipMessagesWithLinks);
-                                  const empty = !value.showText && !value.showImages && !value.showVideos && !value.showFiles && !value.showMarketPrices && !value.showSignature;
+                                  const mediaAvailable = s.mediaMode === 'include' &&
+                                    (value.showImages || value.showVideos || value.showFiles);
+                                  const pricesAvailable = value.showMarketPrices && d.marketEnabled;
+                                  const signatureAvailable = value.showSignature && d.signatureEnabled && Boolean(d.suffix.trim());
+                                  const empty = !value.showText && !mediaAvailable && !pricesAvailable && !signatureAvailable;
                                   return empty ? (
                                     <p className="mt-2 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-warn" role="alert" data-testid={`warning-empty-route-${s.id}-${d.id}`}>
                                       لا يوجد محتوى مفعّل؛ ستُتخطى الرسائل بدلاً من إرسال رسالة فارغة.

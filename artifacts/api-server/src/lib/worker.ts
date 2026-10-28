@@ -110,7 +110,7 @@ async function processDelivery(id: number) {
       const canHtml = destination.format === "html";
       plan = createSendPlan(composed.text, composed.html, hasMedia, canHtml);
       if (!composed.text.trim() && !hasMedia) {
-        const reason = "تم تجاوز المنشور بعد إزالة الروابط أو إحالة المصدر لعدم بقاء محتوى قابل للإرسال";
+        const reason = "تم تجاوز المنشور؛ لا يوجد نص أو وسيط أو أسعار أو توقيع مفعّل لهذا المسار.";
         await pool.query("UPDATE message_deliveries SET status='skipped',error=$2,updated_at=now() WHERE id=$1", [id, reason]);
         await pool.query("INSERT INTO delivery_attempts(delivery_id,status,detail) VALUES($1,'skipped',$2)", [id, reason]);
         await audit("warning", "delivery", `لا يوجد محتوى مفعّل للمسار من ${source.username} إلى ${destination.username}؛ تم تجاوز الرسالة دون إرسال نص فارغ`);

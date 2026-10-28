@@ -12,6 +12,7 @@ import { CreateChannelBody, SaveChannelRoutingBody } from "@workspace/api-zod";
 import { replaceSourceRouting } from "../src/lib/routing";
 import { isVideoDocument } from "../src/lib/telegram-reader";
 import { resolveWorkerHealth, WORKER_HEARTBEAT_STALE_AFTER_MS } from "../src/lib/worker-health";
+import { normalizeRouteContentSettings, routeAllowsMedia } from "../src/lib/route-content";
 
 const source: Channel = {
   id: 1, kind: "source", name: "Unit Test", username: "@unit_test", enabled: true,
@@ -404,6 +405,67 @@ test("destination signature is appended only when enabled", async () => {
   const disabled = await compose({ ...source, attachSource: false }, { ...destination, signatureEnabled: false }, "محتوى الرسالة");
   assert.equal(disabled.text, "محتوى الرسالة");
 });
+test("per-route controls can suppress source text and keep prices or signatures only", async () => {
+  const noSourceText = {
+    showText: false, showImages: false, showVideos: false, showFiles: false,
+    showLinks: false, showMarketPrices: false, showSignature: true,
+  };
+  let translations = 0;
+  const destination: Channel = {
+    ...source, id: -2, kind: "destination", username: "@destination",
+    attachSource: false, signatureEnabled: true, suffix: "تواصل: @owner",
+  };
+  for (const original of ["Original English source text", "نص عربي أصلي"]) {
+    const composed = await compose(
+      { ...source, translate: true, attachSource: true },
+      destination,
+      original,
+      undefined,
+      [],
+      false,
+      async () => { translations++; return { text: "ترجمة غير مسموحة", status: "translated" }; },
+      noSourceText,
+    );
+    assert.equal(composed.text, "تواصل: @owner");
+  }
+  assert.equal(translations, 0, "hidden source text must not reach translation");
+
+  const pricesOnly = await compose(
+    source,
+    { ...destination, marketEnabled: true, signatureEnabled: false, suffix: "" },
+    "Must not be sent",
+    undefined,
+    [],
+    false,
+    undefined,
+    { ...noSourceText, showMarketPrices: true, showSignature: false },
+    async () => [
+      { symbol: "XAU/USD", price: 4041.7, previousPrice: 4040, direction: "up", provider: "test", updatedAt: new Date().toISOString(), stale: false },
+      { symbol: "BTC/USD", price: 80429.7, previousPrice: 80400, direction: "up", provider: "test", updatedAt: new Date().toISOString(), stale: false },
+    ],
+  );
+  assert(pricesOnly.text.includes("XAU/USD"));
+  assert(pricesOnly.text.includes("BTC/USD"));
+  assert(!pricesOnly.text.includes("Must not be sent"));
+
+  const empty = await compose(source, destination, "Must not be sent", undefined, [], false, undefined, {
+    ...noSourceText, showSignature: false,
+  });
+  assert.equal(empty.text, "");
+});
+test("route media switches allow each Telegram media kind independently", () => {
+  const content = normalizeRouteContentSettings({
+    showText: false, showImages: true, showVideos: false, showFiles: true,
+    showLinks: true, showMarketPrices: false, showSignature: false,
+  });
+  assert(routeAllowsMedia("photo", content));
+  assert(!routeAllowsMedia("video", content));
+  assert(routeAllowsMedia("file", content));
+  assert(!routeAllowsMedia("none", content));
+  assert(!routeAllowsMedia("legacy", normalizeRouteContentSettings({
+    showImages: false, showVideos: false, showFiles: false,
+  })));
+});
 test("source link removal ignores legacy source additions and preserves destination signature", async () => {
   const composed = await compose(
     {
@@ -650,20 +712,34 @@ test("editing a source replaces only its selected destinations and rolls back in
     }).success);
     assert(!SaveChannelRoutingBody.safeParse({ destinationIds: [destinationId] }).success);
 
-    await replaceSourceRouting(sourceId, [-destinationId, -otherDestinationId], [-destinationId]);
+    await replaceSourceRouting(sourceId, [-destinationId, -otherDestinationId], [-destinationId], [
+      {
+        destinationId: -destinationId,
+        contentSettings: {
+          showText: false, showImages: true, showVideos: false, showFiles: false,
+          showLinks: false, showMarketPrices: true, showSignature: true,
+        },
+      },
+    ]);
     await replaceSourceRouting(otherSourceId, [-otherDestinationId], []);
     await replaceSourceRouting(sourceId, [-destinationId]);
 
     const selected = await db.query(
-      "SELECT destination_id,hide_source_link FROM routing_rules WHERE source_id=$1 ORDER BY destination_id",
+      "SELECT destination_id,hide_source_link,content_settings FROM routing_rules WHERE source_id=$1 ORDER BY destination_id",
       [sourceId],
     );
     const otherSelected = await db.query(
       "SELECT destination_id FROM routing_rules WHERE source_id=$1",
       [otherSourceId],
     );
-    assert.deepEqual(selected.rows.map((row) => ({ destinationId: row.destination_id, hideSourceLink: row.hide_source_link })), [
-      { destinationId, hideSourceLink: true },
+    assert.deepEqual(selected.rows.map((row) => ({ destinationId: row.destination_id, hideSourceLink: row.hide_source_link, contentSettings: row.content_settings })), [
+      {
+        destinationId, hideSourceLink: true,
+        contentSettings: {
+          showText: false, showImages: true, showVideos: false, showFiles: false,
+          showLinks: false, showMarketPrices: true, showSignature: true,
+        },
+      },
     ]);
     assert.deepEqual(otherSelected.rows.map((row) => row.destination_id), [otherDestinationId]);
     await assert.rejects(() => replaceSourceRouting(sourceId!, [-destinationId!], [-otherDestinationId!]), /غير صالحة/);
