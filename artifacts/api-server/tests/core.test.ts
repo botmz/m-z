@@ -2,7 +2,7 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import {
   GEMINI_FREE_MODEL, GEMINI_FREE_MODELS, geminiHttpError, protectTokens, requestGeminiTranslation,
-  requestOpenAITranslation, restoreTokens, translationServiceState, translate, isEnglishText,
+  requestOpenAITranslation, restoreTokens, translationServiceState, translate, isEnglishText, validateTranslation,
 } from "../src/lib/translation";
 import { acceptsMessage, containsLink, sourceLink, splitText, originalHtml, escapeHtml, marketPriceLine, compose, createSendPlan } from "../src/lib/composition";
 import { removeSourceReferences, removeTextLinks } from "../src/lib/source-reference";
@@ -34,6 +34,17 @@ test("rejects translation that removes an immutable token", () => {
 test("rejects translation that duplicates an immutable token", () => {
   const { masked, tokens } = protectTokens("BTC 4250");
   assert.throws(() => restoreTokens(masked + "⟦MZ0⟧", tokens));
+});
+test("translation quality check accepts Arabic output and rejects unchanged or wrong-language text", () => {
+  validateTranslation("Gold price rose 2.5 percent.", "ارتفع سعر الذهب 2.5 بالمئة.", "ar");
+  assert.throws(
+    () => validateTranslation("Gold prices rose today.", "Gold prices rose today.", "ar"),
+    /لم يؤكد الفحص/,
+  );
+  assert.throws(
+    () => validateTranslation("Gold prices rose today.", "Gold prices rose today, 2.5%.", "ar"),
+    /اللغة المستهدفة/,
+  );
 });
 test("Gemini free translation uses the fixed model and keeps its API key out of the URL", async () => {
   let requestUrl = "";
@@ -347,9 +358,11 @@ test("source-message fan-out reuses a translated body and does not quickly repea
   } | null>("translation_test", null);
   const sourceKey = `@translation_cache_${Date.now()}`;
   const inserted = await pool.query(`INSERT INTO messages(source_id,source_key,telegram_message_id,text)
-    VALUES(NULL,$1,1,'gold price'),(NULL,$1,2,'gold price') RETURNING id`, [sourceKey]);
+    VALUES(NULL,$1,1,'gold price'),(NULL,$1,2,'gold price'),(NULL,$1,3,'Gold prices rose today.')
+    RETURNING id`, [sourceKey]);
   const successfulMessageId = inserted.rows[0].id as number;
   const failedMessageId = inserted.rows[1].id as number;
+  const rejectedMessageId = inserted.rows[2].id as number;
   const model = GEMINI_FREE_MODEL;
   await setSetting("settings", { ...previousSettings, translationProvider: "gemini", translationModel: model });
   await setSetting("translation_test", {
@@ -381,6 +394,22 @@ test("source-message fan-out reuses a translated body and does not quickly repea
     assert.equal(failed.status, "fallback_original");
     assert.equal(cachedFailure.status, "fallback_original");
     assert.equal(failedCalls, 1);
+
+    let invalidCalls = 0;
+    const unchangedTranslator = async () => {
+      invalidCalls++;
+      return "Gold prices rose today.";
+    };
+    await assert.rejects(
+      translate("Gold prices rose today.", allowOriginal, rejectedMessageId, unchangedTranslator),
+      (error: unknown) => Boolean(error && typeof error === "object" && "translationHeld" in error),
+      "an unchanged provider response must be held, even when original fallback is selected",
+    );
+    await assert.rejects(
+      translate("Gold prices rose today.", allowOriginal, rejectedMessageId, unchangedTranslator),
+      (error: unknown) => Boolean(error && typeof error === "object" && "translationHeld" in error),
+    );
+    assert.equal(invalidCalls, 1, "rejected translations are cached and never sent as the source text");
   } finally {
     await pool.query("DELETE FROM messages WHERE source_key=$1", [sourceKey]);
     await setSetting("settings", previousSettings);
