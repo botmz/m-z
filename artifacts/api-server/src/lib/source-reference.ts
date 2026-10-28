@@ -138,7 +138,12 @@ export function removeSourceReferences(
     const line = text.slice(lineStart, lineEnd);
     const trimmedName = line.trim().replace(/^[|•·–—\-,:،؛.!?؟\s]+|[|•·–—\-,:،؛.!?؟\s]+$/gu, "").replace(/\s+/gu, " ").toLocaleLowerCase();
     const hasSourceReference = matchingRanges.some((range) => range.start < lineEnd && range.end > lineStart);
-    if ((hasSourceReference && attributionPrefix.test(line)) || (exactSourceName && trimmedName === exactSourceName)) {
+    const attributionValue = line.replace(attributionPrefix, "").trim()
+      .replace(/^[|•·–—\-,:،؛.!?؟\s]+|[|•·–—\-,:،؛.!?؟\s]+$/gu, "")
+      .replace(/\s+/gu, " ").toLocaleLowerCase();
+    const namedAttribution = attributionPrefix.test(line) &&
+      (attributionValue === exactSourceName || attributionValue === cleanUsername.toLocaleLowerCase());
+    if ((hasSourceReference && attributionPrefix.test(line)) || namedAttribution || (exactSourceName && trimmedName === exactSourceName)) {
       allRanges.push({ start: lineStart, end: lineEnd });
     }
     if (newline < 0) break;
@@ -148,7 +153,7 @@ export function removeSourceReferences(
   const ranges = mergeRanges(allRanges);
   if (!ranges.length) return { text, entities };
 
-  const cleanedLines: { units: MappedUnit[]; newlineIndex?: number; start: number; end: number; }[] = [];
+  const cleanedLines: { units: MappedUnit[]; newlineIndex?: number; start: number; end: number; sourceRemoved: boolean; }[] = [];
   let rangeIndex = 0;
   lineStart = 0;
   for (let index = 0; index <= text.length; index++) {
@@ -174,6 +179,7 @@ export function removeSourceReferences(
       ...(index < text.length ? { newlineIndex: index } : {}),
       start: lineStart,
       end: lineEnd,
+      sourceRemoved: ranges.some((range) => range.start < lineEnd && range.end > lineStart),
     });
     lineStart = index + 1;
   }
@@ -182,7 +188,7 @@ export function removeSourceReferences(
   let blankLine: (typeof cleanedLines)[number] | undefined;
   for (const line of cleanedLines) {
     if (!line.units.length) {
-      if (keptLines.length) blankLine ??= line;
+      if (keptLines.length && !line.sourceRemoved) blankLine ??= line;
       continue;
     }
     if (keptLines.length && blankLine) {

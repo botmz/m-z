@@ -118,8 +118,8 @@ export default function RoutingPage() {
       ) : (
         <Panel flush>
           <div className="border-b border-border bg-muted/20 px-4 py-2 text-sm text-muted-foreground" data-testid="text-routing-help">
-              حدد الوجهات المطلوبة فقط لكل مصدر. «بدون توجيه» يمسح كل وجهاته؛ ولن تتغير القواعد المحفوظة حتى تضغط «حفظ التوجيه».
-            </div>
+            حدد الوجهات المطلوبة فقط لكل مصدر. لكل وجهة محددة يمكنك تفعيل «إخفاء رابط المصدر» بشكل مستقل. «بدون توجيه» يمسح كل وجهاته؛ ولن تتغير القواعد المحفوظة حتى تضغط «حفظ التوجيه».
+          </div>
           {dirty && <div className="border-b border-warn/30 bg-warn/10 px-4 py-2 text-xs font-semibold text-warn" data-testid="text-unsaved">لديك تغييرات غير محفوظة</div>}
           <ul className="divide-y divide-border">
             {sources.map((s) => (

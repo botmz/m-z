@@ -136,6 +136,9 @@ test("source reference cleanup removes only the selected channel's visible links
     removeSourceReferences("معلومة مهمة\nالمصدر: http://t.me/unit_test\nتفاصيل إضافية", [], source.username, source.name).text,
     "معلومة مهمة\nتفاصيل إضافية",
   );
+  assert.equal(removeSourceReferences("خبر\nالمصدر: Unit Test\nتفاصيل", [], source.username, source.name).text, "خبر\nتفاصيل");
+  const otherAttribution = "خبر\nالمصدر: مصدر إخباري آخر\nتفاصيل";
+  assert.equal(removeSourceReferences(otherAttribution, [], source.username, source.name).text, otherAttribution);
   const caption = "تعليق الصورة https://t.me/unit_test/52";
   assert.equal(removeSourceReferences(caption, [], source.username, source.name).text, "تعليق الصورة");
   const unrelated = "رابط الخبر https://news.example/story وقناة أخرى https://t.me/other_channel/9";
