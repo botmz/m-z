@@ -1,4 +1,5 @@
-import { settings, audit, safeError, getSetting, setSetting } from "./store";
+import { createHash } from "node:crypto";
+import { pool, settings, audit, safeError, getSetting, setSetting } from "./store";
 import type { Channel } from "./store";
 
 export const GEMINI_FREE_MODELS = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"] as const;
@@ -11,6 +12,31 @@ export type TranslationTestRecord = {
   message: string;
   checkedAt: string;
 };
+export type TranslationServiceState = { status: string; detail: string; checkedAt: string | null };
+
+export function translationServiceState(
+  provider: string,
+  model: string,
+  test: TranslationTestRecord | null,
+  credentialMissing: boolean,
+): TranslationServiceState {
+  if (provider === "disabled") return { status: "disabled", detail: "الترجمة معطلة؛ اختر مزوداً واختبره قبل التفعيل.", checkedAt: null };
+  if (credentialMissing) {
+    const detail = provider === "gemini" ? "مفتاح GEMINI_API_KEY غير موجود في أسرار Replit."
+      : provider === "openai" ? "مفتاح OPENAI_API_KEY غير موجود؛ OpenAI API قد يترتب عليه رسم ولا يعمل تلقائياً."
+      : provider === "deepl" ? "مفتاح DEEPL_API_KEY غير موجود في أسرار Replit."
+      : "خدمة Replit AI غير مُعدّة.";
+    return { status: "error", detail, checkedAt: null };
+  }
+  if (!test || test.provider !== provider || test.model !== model.trim()) {
+    return { status: "unverified", detail: "لم يُختبر المزود والنموذج المحفوظان بطلب ترجمة فعلي.", checkedAt: null };
+  }
+  return {
+    status: test.ok ? "connected" : "error",
+    detail: test.message,
+    checkedAt: test.checkedAt,
+  };
+}
 
 type GeminiResponse = {
   candidates?: Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }>;
@@ -44,7 +70,15 @@ function retryDelay(response: Response) {
 }
 
 export function geminiHttpError(status: number, providerMessage = "", retryAfterSeconds = 0) {
-  if (status === 400) return "رفض Gemini صيغة الطلب؛ تحقق من النموذج المحدد.";
+  if (status === 400) {
+    if (/api.?key.*(invalid|not valid)|api_key_invalid/i.test(providerMessage)) {
+      return "مفتاح GEMINI_API_KEY غير صالح لدى Google؛ استبدله بمفتاح Gemini Developer API صالح من أسرار Replit.";
+    }
+    if (/model.*(not found|not supported|not available)|models\/.*not found/i.test(providerMessage)) {
+      return "نموذج Gemini غير متاح لهذا المفتاح أو واجهة API؛ اختر أحد النموذجين المجانيين واختبره.";
+    }
+    return "رفض Gemini صيغة الطلب (HTTP 400)؛ تحقق من إعداد المفتاح والنموذج ثم أعد الاختبار.";
+  }
   if (status === 401 || status === 403) return "رفض Gemini مفتاح API أو صلاحيات المشروع؛ تحقق من صلاحية GEMINI_API_KEY وإعداد Google AI Studio.";
   if (status === 404) return "النموذج غير متاح لهذا المفتاح أو واجهة Gemini (HTTP 404). جرّب نموذجاً مجانياً آخر ثم اختبره.";
   if (status === 429) {
@@ -83,7 +117,7 @@ export async function requestGeminiTranslation(
   text: string,
   targetLanguage: string,
   apiKey: string,
-  model = GEMINI_FREE_MODEL,
+  model: string = GEMINI_FREE_MODEL,
   fetcher: typeof fetch = fetch,
 ): Promise<string> {
   if (!GEMINI_FREE_MODELS.includes(model as typeof GEMINI_FREE_MODELS[number])) {
@@ -272,21 +306,55 @@ async function handleTranslationFailure(source: Channel, text: string, reason: s
   throw Object.assign(new Error(`فشلت الترجمة؛ عُلقت الرسالة وفق إعداد المصدر. ${reason}`), { translationHeld: true });
 }
 
-export async function translate(text: string, source: Channel): Promise<{ text: string; status: string; warning?: string }> {
+export async function translate(
+  text: string,
+  source: Channel,
+  messageId?: number,
+  translator: typeof translateWithProvider = translateWithProvider,
+): Promise<{ text: string; status: string; warning?: string }> {
   if (!source.translate || !text) return { text, status: "not_requested" };
   const config = await settings();
   const provider = config.translationProvider as TranslationProvider;
   const model = config.translationModel.trim();
+  const inputHash = createHash("sha256").update(text).digest("hex");
+  if (messageId) {
+    const cached = await pool.query(`SELECT status,translated_text,error,created_at FROM message_translations
+      WHERE message_id=$1 AND provider=$2 AND model=$3 AND target_language=$4 AND input_hash=$5`,
+    [messageId, provider, model, source.targetLanguage, inputHash]);
+    const row = cached.rows[0];
+    if (row?.status === "translated" && typeof row.translated_text === "string") {
+      return { text: row.translated_text, status: "translated" };
+    }
+    if (row?.status === "failed" && Date.now() - new Date(row.created_at).getTime() < 10 * 60 * 1000) {
+      return handleTranslationFailure(source, text, row.error || "فشلت الترجمة لهذا المنشور؛ لم تُكرر المحاولة تلقائياً.");
+    }
+  }
   const verification = await getSetting<TranslationTestRecord | null>("translation_test", null);
   if (!verification?.ok || verification.provider !== provider || verification.model !== model) {
     return handleTranslationFailure(source, text, "اختبر مزود الترجمة والنموذج المحددين بنجاح من صفحة الترجمة قبل استخدامهما.");
   }
   try {
-    const translated = await translateWithProvider(provider, model, text, source.targetLanguage);
+    const translated = await translator(provider, model, text, source.targetLanguage);
+    if (messageId) {
+      await pool.query(`INSERT INTO message_translations
+        (message_id,provider,model,target_language,input_hash,status,translated_text,error)
+        VALUES($1,$2,$3,$4,$5,'translated',$6,NULL)
+        ON CONFLICT(message_id,provider,model,target_language,input_hash)
+        DO UPDATE SET status='translated',translated_text=EXCLUDED.translated_text,error=NULL,created_at=now()`,
+      [messageId, provider, model, source.targetLanguage, inputHash, translated]);
+    }
     return { text: translated, status: "translated" };
   } catch (error) {
     const reason = safeError(transportError(error));
     await setSetting("translation_test", { provider, model, ok: false, message: reason, checkedAt: new Date().toISOString() });
+    if (messageId) {
+      await pool.query(`INSERT INTO message_translations
+        (message_id,provider,model,target_language,input_hash,status,translated_text,error)
+        VALUES($1,$2,$3,$4,$5,'failed',NULL,$6)
+        ON CONFLICT(message_id,provider,model,target_language,input_hash)
+        DO UPDATE SET status='failed',translated_text=NULL,error=EXCLUDED.error,created_at=now()`,
+      [messageId, provider, model, source.targetLanguage, inputHash, reason]);
+    }
     return handleTranslationFailure(source, text, reason);
   }
 }

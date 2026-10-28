@@ -2,12 +2,12 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import {
   GEMINI_FREE_MODEL, GEMINI_FREE_MODELS, geminiHttpError, protectTokens, requestGeminiTranslation,
-  requestOpenAITranslation, restoreTokens,
+  requestOpenAITranslation, restoreTokens, translationServiceState, translate,
 } from "../src/lib/translation";
 import { acceptsMessage, containsLink, sourceLink, splitText, originalHtml, escapeHtml, marketPriceLine, compose } from "../src/lib/composition";
 import { removeSourceReferences } from "../src/lib/source-reference";
 import { direction } from "../src/lib/market";
-import { channelRow, normalizeUsername, sameTelegramUsername, pool, type Channel } from "../src/lib/store";
+import { channelRow, normalizeUsername, sameTelegramUsername, pool, getSetting, setSetting, settings, type Channel } from "../src/lib/store";
 import { CreateChannelBody, SaveChannelRoutingBody } from "@workspace/api-zod";
 import { replaceSourceRouting } from "../src/lib/routing";
 
@@ -68,7 +68,7 @@ test("Gemini quota failures explain the free limit without exposing response con
     )),
     (error: unknown) => {
       assert(error instanceof Error);
-      assert.match(error.message, /تم تجاوز حصة Gemini المجانية.*HTTP 429/);
+      assert.match(error.message, /حدود الاستخدام/);
       assert(!error.message.includes("provider response detail"));
       assert(!error.message.includes("test-secret"));
       return true;
@@ -77,10 +77,23 @@ test("Gemini quota failures explain the free limit without exposing response con
 });
 test("Gemini free model choices are current and quota failures differ from request-rate limits", () => {
   assert.deepEqual(GEMINI_FREE_MODELS, ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]);
-  assert.match(geminiHttpError(429, "per day free tier quota"), /الحصة المجانية/);
+  assert.match(geminiHttpError(429, "per day free tier quota"), /حصة Gemini المجانية/);
   assert.match(geminiHttpError(429, "requests per minute RPM"), /حد سرعة/);
   assert.match(geminiHttpError(404), /غير متاح/);
+  assert.match(geminiHttpError(400, "API key not valid. Please pass a valid API key."), /GEMINI_API_KEY غير صالح/);
+  assert.match(geminiHttpError(400, "invalid request payload"), /صيغة الطلب/);
   assert.match(geminiHttpError(403), /GEMINI_API_KEY/);
+});
+test("translation service is connected only after a successful matching live test", () => {
+  const valid = {
+    provider: "gemini" as const, model: GEMINI_FREE_MODEL, ok: true,
+    message: "نجح اختبار ترجمة حقيقي إلى العربية.", checkedAt: "2026-10-28T08:00:00.000Z",
+  };
+  assert.equal(translationServiceState("gemini", GEMINI_FREE_MODEL, null, false).status, "unverified");
+  assert.equal(translationServiceState("gemini", GEMINI_FREE_MODEL, { ...valid, ok: false }, false).status, "error");
+  assert.equal(translationServiceState("gemini", "gemini-3.1-flash-lite", valid, false).status, "unverified");
+  assert.equal(translationServiceState("gemini", GEMINI_FREE_MODEL, valid, false).status, "connected");
+  assert.equal(translationServiceState("gemini", GEMINI_FREE_MODEL, valid, true).status, "error");
 });
 test("OpenAI API translation keeps its key in the header and does not retry", async () => {
   let requestUrl = "";
@@ -209,7 +222,7 @@ test("route hide-source option runs before composition while disabled routes kee
 test("a successful provider translation is the body sent by message composition", async () => {
   const destination: Channel = { ...source, id: -2, kind: "destination", name: "Destination", format: "plain" };
   const translated = await compose(
-    { ...source, translate: true },
+    { ...source, translate: true, attachSource: false },
     destination,
     "Gold price rose 2.5 percent.",
     undefined,
@@ -219,6 +232,58 @@ test("a successful provider translation is the body sent by message composition"
   );
   assert.equal(translated.text, "ارتفع سعر الذهب 2.5 بالمئة.");
   assert.equal(translated.translationStatus, "translated");
+});
+test("source-message fan-out reuses a translated body and does not quickly repeat a failed request", async () => {
+  const previousSettings = await settings();
+  const previousTest = await getSetting<{
+    provider: "gemini" | "openai" | "replit" | "deepl";
+    model: string;
+    ok: boolean;
+    message: string;
+    checkedAt: string;
+  } | null>("translation_test", null);
+  const sourceKey = `@translation_cache_${Date.now()}`;
+  const inserted = await pool.query(`INSERT INTO messages(source_id,source_key,telegram_message_id,text)
+    VALUES(NULL,$1,1,'gold price'),(NULL,$1,2,'gold price') RETURNING id`, [sourceKey]);
+  const successfulMessageId = inserted.rows[0].id as number;
+  const failedMessageId = inserted.rows[1].id as number;
+  const model = GEMINI_FREE_MODEL;
+  await setSetting("settings", { ...previousSettings, translationProvider: "gemini", translationModel: model });
+  await setSetting("translation_test", {
+    provider: "gemini", model, ok: true, message: "نجح اختبار ترجمة حقيقي.", checkedAt: new Date().toISOString(),
+  });
+
+  try {
+    let successfulCalls = 0;
+    const successfulTranslator = async () => {
+      successfulCalls++;
+      return "ارتفع سعر الذهب.";
+    };
+    const translatedOnce = await translate("gold price", { ...source, translate: true }, successfulMessageId, successfulTranslator);
+    const reused = await translate("gold price", { ...source, translate: true }, successfulMessageId, successfulTranslator);
+    assert.equal(translatedOnce.status, "translated");
+    assert.equal(reused.text, "ارتفع سعر الذهب.");
+    assert.equal(successfulCalls, 1);
+    await translate("gold price without source link", { ...source, translate: true }, successfulMessageId, successfulTranslator);
+    assert.equal(successfulCalls, 2, "route-specific cleaned text must not reuse a different input's translation");
+
+    let failedCalls = 0;
+    const failingTranslator = async () => {
+      failedCalls++;
+      throw new Error("تم تجاوز حد الطلبات");
+    };
+    const allowOriginal = { ...source, translate: true, translationFailure: "original" as const };
+    const failed = await translate("another message", allowOriginal, failedMessageId, failingTranslator);
+    const cachedFailure = await translate("another message", allowOriginal, failedMessageId, failingTranslator);
+    assert.equal(failed.status, "fallback_original");
+    assert.equal(cachedFailure.status, "fallback_original");
+    assert.equal(failedCalls, 1);
+  } finally {
+    await pool.query("DELETE FROM messages WHERE source_key=$1", [sourceKey]);
+    await setSetting("settings", previousSettings);
+    if (previousTest) await setSetting("translation_test", previousTest);
+    else await pool.query("DELETE FROM app_settings WHERE key='translation_test'");
+  }
 });
 test("market price line omits provider and timestamp while retaining stale-price warning", () => {
   const fresh = marketPriceLine("BTC/USD", 81671.65, "down", false);

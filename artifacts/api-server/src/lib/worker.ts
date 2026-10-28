@@ -2,6 +2,7 @@ import { pool, getSetting, setSetting, settings, audit, safeError, channel, same
 import { connectReader, readerConnected, readerState, catchUp, downloadPhoto } from "./telegram-reader";
 import { botApi, botState, testBot, TelegramApiError, AmbiguousSendError } from "./telegram-bot";
 import { compose, containsLink, splitText } from "./composition";
+import { translate } from "./translation";
 import { refreshPrices } from "./market";
 import { logger } from "./logger";
 import type { PoolClient } from "@workspace/db";
@@ -62,7 +63,15 @@ async function processDelivery(id: number) {
       plan = null;
     }
     if (!plan) {
-      const composed = await compose(source, destination, delivery.text, delivery.telegram_message_id, delivery.entities, hideSourceLink);
+      const composed = await compose(
+        source,
+        destination,
+        delivery.text,
+        delivery.telegram_message_id,
+        delivery.entities,
+        hideSourceLink,
+        (text, sourceChannel) => translate(text, sourceChannel, delivery.message_id),
+      );
       plan = [];
       const photo = delivery.has_photo && source.mediaMode === "include";
       const canHtml = destination.format === "html";

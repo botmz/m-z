@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, timestamp, boolean, uniqueIndex, index, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, timestamp, boolean, uniqueIndex, index, jsonb, primaryKey } from "drizzle-orm/pg-core";
 import { sourceChannels, destinationChannels } from "./channels";
 
 export const messages = pgTable("messages", {
@@ -11,6 +11,20 @@ export const messages = pgTable("messages", {
   entities: jsonb("entities").notNull().default([]),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [uniqueIndex("messages_dedup").on(t.sourceKey, t.telegramMessageId)]);
+export const messageTranslations = pgTable("message_translations", {
+  messageId: integer("message_id").notNull().references(() => messages.id, { onDelete: "cascade" }),
+  provider: text("provider").notNull(),
+  model: text("model").notNull(),
+  targetLanguage: text("target_language").notNull(),
+  inputHash: text("input_hash").notNull(),
+  status: text("status").notNull(),
+  translatedText: text("translated_text"),
+  error: text("error"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [primaryKey({
+  name: "message_translations_key",
+  columns: [t.messageId, t.provider, t.model, t.targetLanguage, t.inputHash],
+})]);
 export const messageDeliveries = pgTable("message_deliveries", {
   id: serial("id").primaryKey(),
   messageId: integer("message_id").notNull().references(() => messages.id, { onDelete: "cascade" }),

@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import {
   GetDashboardResponse, GetMessagesQueryParams, GetMessagesResponse, GetLogsQueryParams, GetLogsResponse,
-  RetryMessageParams, SaveSettingsBody, GetSettingsResponse, GetMarketResponse, TranslationTestInput, TranslationTestResponse,
+  RetryMessageParams, SaveSettingsBody, GetSettingsResponse, GetMarketResponse, TestTranslationBody, TestTranslationResponse,
   SendPreviewMessageBody, SendPreviewMessageResponse, ControlWorkerBody, PreviewMessageBody, PreviewMessageResponse, GetServicesResponse,
 } from "@workspace/api-zod";
 import { pool, channels, channel, messageHistory, logs, settings, setSetting, getSetting, audit, safeError } from "../../lib/store";
@@ -11,7 +11,10 @@ import { workerState, control } from "../../lib/worker";
 import { marketQuotes, refreshPrices } from "../../lib/market";
 import { compose } from "../../lib/composition";
 import { sendManualMessage } from "../../lib/telegram-manual-send";
-import { GEMINI_FREE_MODELS, testTranslationProvider, type TranslationTestRecord, type TranslationProvider } from "../../lib/translation";
+import {
+  GEMINI_FREE_MODELS, testTranslationProvider, translationServiceState,
+  type TranslationTestRecord, type TranslationProvider,
+} from "../../lib/translation";
 import { createTelegramQrRouter } from "./telegram-qr";
 
 export const operationsRouter: IRouter = Router();
@@ -61,7 +64,8 @@ operationsRouter.get("/logs", async (req, res) => {
 });
 operationsRouter.get("/settings", async (_req, res) => { res.json(GetSettingsResponse.parse(await settings())); });
 operationsRouter.put("/settings", async (req, res) => {
-  const input = SaveSettingsBody.parse(req.body);
+  const parsed = SaveSettingsBody.parse(req.body);
+  const input = { ...parsed, translationModel: parsed.translationModel.trim() };
   try { new Intl.DateTimeFormat("ar", { timeZone: input.timezone }); }
   catch { res.status(400).json({ error: "المنطقة الزمنية غير صالحة" }); return; }
   if (input.translationProvider === "deepl" && !process.env.DEEPL_API_KEY) {
@@ -155,24 +159,17 @@ operationsRouter.get("/services", async (_req, res) => {
   await pool.query("SELECT 1");
   const config = await settings();
   const translationTest = await getSetting<TranslationTestRecord | null>("translation_test", null);
-  const matchingTranslationTest = translationTest?.provider === config.translationProvider &&
-    translationTest.model === config.translationModel ? translationTest : null;
   const translationCredentialMissing = config.translationProvider === "gemini" ? !process.env.GEMINI_API_KEY
     : config.translationProvider === "openai" ? !process.env.OPENAI_API_KEY
     : config.translationProvider === "deepl" ? !process.env.DEEPL_API_KEY
     : config.translationProvider === "replit" ? !process.env.AI_INTEGRATIONS_OPENAI_BASE_URL
     : false;
-  const translationStatus = config.translationProvider === "disabled" ? "disabled"
-    : translationCredentialMissing ? "error"
-    : !matchingTranslationTest ? "unverified"
-    : matchingTranslationTest.ok ? "connected" : "error";
-  const translationDetail = config.translationProvider === "disabled" ? "الترجمة معطلة؛ اختر مزوداً واختبره قبل التفعيل."
-    : translationCredentialMissing ? config.translationProvider === "gemini" ? "مفتاح GEMINI_API_KEY غير موجود في أسرار Replit."
-      : config.translationProvider === "openai" ? "مفتاح OPENAI_API_KEY غير موجود؛ OpenAI API قد يترتب عليه رسم ولا يعمل تلقائياً."
-      : config.translationProvider === "deepl" ? "مفتاح DEEPL_API_KEY غير موجود في أسرار Replit."
-      : "خدمة Replit AI غير مُعدّة."
-    : matchingTranslationTest ? matchingTranslationTest.message
-    : "لم يُختبر المزود والنموذج المحفوظان بطلب ترجمة فعلي.";
+  const translationService = translationServiceState(
+    config.translationProvider,
+    config.translationModel,
+    translationTest,
+    translationCredentialMissing,
+  );
   const market = await marketQuotes();
   const marketError = await getSetting("market_error", "");
   res.json(GetServicesResponse.parse([
@@ -182,16 +179,15 @@ operationsRouter.get("/services", async (_req, res) => {
     { id: "worker", name: "عامل المعالجة", ...workerState },
     { id: "market", name: "مزود أسعار السوق", status: marketError ? "error" : market.length === 2 && market.every(p => !p.stale) ? "connected" : "unverified",
       detail: marketError || "Coinbase للبيتكوين • Gold API للذهب • المقارنة بآخر قراءة ناجحة", checkedAt: market[0]?.updatedAt ?? null },
-    { id: "translation", name: "خدمة الترجمة", status: translationStatus, detail: translationDetail,
-      checkedAt: matchingTranslationTest?.checkedAt ?? null },
+    { id: "translation", name: "خدمة الترجمة", ...translationService },
   ]));
 });
 operationsRouter.post("/translation/test", async (req, res) => {
-  const input = TranslationTestInput.parse(req.body);
+  const input = TestTranslationBody.parse(req.body);
   const result = await testTranslationProvider(input.provider as TranslationProvider, input.model.trim());
   await audit(result.ok ? "info" : "warning", "translation", result.ok
     ? "نجح اختبار الترجمة الفعلي."
     : "فشل اختبار الترجمة الفعلي؛ راجع الرسالة الآمنة في صفحة الترجمة.");
-  res.json(TranslationTestResponse.parse(result));
+  res.json(TestTranslationResponse.parse(result));
 });
 operationsRouter.post("/telegram/qr", async (_req, res) => { res.json(await beginQr()); });
