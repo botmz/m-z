@@ -330,6 +330,23 @@ test("source cleanup removes hidden source links and remaps unrelated link entit
     { className: "MessageEntityTextUrl", offset: 10, length: 8, url: "https://example.com" },
   ]);
 });
+test("hiding a source link preserves the sender link in the same footer line", async () => {
+  const text = "خبر مهم\nالمصدر: https://t.me/unit_test/123 | المرسل: https://t.me/mz05999\nتابعونا";
+  const cleaned = removeSourceReferences(text, [], source.username, source.name);
+  assert.equal(cleaned.text, "خبر مهم\nالمرسل: https://t.me/mz05999\nتابعونا");
+
+  const destination: Channel = { ...source, id: -2, kind: "destination", username: "@destination", attachSource: false };
+  const composed = await compose(
+    { ...source, suffix: "المصدر: https://t.me/unit_test/123 | المرسل: https://t.me/mz05999" },
+    destination,
+    "خبر مهم",
+    undefined,
+    [],
+    true,
+  );
+  assert(composed.text.includes("https://t.me/mz05999"));
+  assert(!composed.text.includes("https://t.me/unit_test"));
+});
 test("route hide-source option runs before composition while disabled routes keep the source link", async () => {
   const destination: Channel = {
     ...source, id: -2, kind: "destination", name: "Destination", username: "@unit_destination",

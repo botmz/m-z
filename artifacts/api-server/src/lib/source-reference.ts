@@ -143,7 +143,12 @@ export function removeSourceReferences(
       .replace(/\s+/gu, " ").toLocaleLowerCase();
     const namedAttribution = attributionPrefix.test(line) &&
       (attributionValue === exactSourceName || attributionValue === cleanUsername.toLocaleLowerCase());
-    if ((hasSourceReference && attributionPrefix.test(line)) || namedAttribution || (exactSourceName && trimmedName === exactSourceName)) {
+    if (hasSourceReference && attributionPrefix.test(line)) {
+      // Remove only the source label and the matched source reference. A
+      // sender/contact link may share this footer line and must be preserved.
+      const attribution = line.match(attributionPrefix);
+      if (attribution) allRanges.push({ start: lineStart, end: lineStart + attribution[0].length });
+    } else if (namedAttribution || (exactSourceName && trimmedName === exactSourceName)) {
       allRanges.push({ start: lineStart, end: lineEnd });
     }
     if (newline < 0) break;
