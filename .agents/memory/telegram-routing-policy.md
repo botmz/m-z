@@ -9,6 +9,8 @@ The option to hide a source reference belongs to an individual saved source-to-d
 
 Each source-message/destination pair must produce at most one delivery, including when workers race. Ambiguous Telegram sends must not be automatically retried because Telegram may already have accepted them.
 
-**Why:** The owner asked to choose destinations manually, avoid broadcasting, and prevent a highlighted message from being published more than once.
+Deduplicate source posts by Telegram message ID only. Do not discard a different post merely because its text resembles an earlier one or its price values changed.
 
-**How to apply:** Preserve explicit routing at the UI, API, and queue layers; atomically claim a queued delivery before sending; keep ambiguous sends for manual inspection; keep source-scoped updates isolated; store hide-source settings per route; require owner confirmation before backfilling old messages.
+**Why:** The owner asked to choose destinations manually, avoid broadcasting, and prevent duplicate delivery while preserving separate market updates.
+
+**How to apply:** Preserve explicit routing at the UI, API, and queue layers; deduplicate by Telegram message ID; atomically claim a queued delivery before sending; keep ambiguous sends for manual inspection; keep source-scoped updates isolated; store hide-source settings per route; require owner confirmation before backfilling old messages.
