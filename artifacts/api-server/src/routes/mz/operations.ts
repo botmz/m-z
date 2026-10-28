@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import {
   GetDashboardResponse, GetMessagesQueryParams, GetMessagesResponse, GetLogsQueryParams, GetLogsResponse,
-  RetryMessageParams, SaveSettingsBody, GetSettingsResponse, GetMarketResponse,
+  RetryMessageParams, SaveSettingsBody, GetSettingsResponse, GetMarketResponse, TranslationTestInput, TranslationTestResponse,
   SendPreviewMessageBody, SendPreviewMessageResponse, ControlWorkerBody, PreviewMessageBody, PreviewMessageResponse, GetServicesResponse,
 } from "@workspace/api-zod";
 import { pool, channels, channel, messageHistory, logs, settings, setSetting, getSetting, audit, safeError } from "../../lib/store";
@@ -11,7 +11,7 @@ import { workerState, control } from "../../lib/worker";
 import { marketQuotes, refreshPrices } from "../../lib/market";
 import { compose } from "../../lib/composition";
 import { sendManualMessage } from "../../lib/telegram-manual-send";
-import { GEMINI_FREE_MODEL } from "../../lib/translation";
+import { GEMINI_FREE_MODELS, testTranslationProvider, type TranslationTestRecord, type TranslationProvider } from "../../lib/translation";
 import { createTelegramQrRouter } from "./telegram-qr";
 
 export const operationsRouter: IRouter = Router();
@@ -76,8 +76,19 @@ operationsRouter.put("/settings", async (req, res) => {
   if (input.translationProvider === "gemini" && !process.env.GEMINI_API_KEY) {
     res.status(400).json({ error: "أضف GEMINI_API_KEY إلى الأسرار قبل تفعيل Gemini" }); return;
   }
-  if (input.translationProvider === "gemini" && input.translationModel !== GEMINI_FREE_MODEL) {
-    res.status(400).json({ error: `نموذج Gemini المجاني المتاح هو ${GEMINI_FREE_MODEL}` }); return;
+  if (input.translationProvider === "gemini" && !GEMINI_FREE_MODELS.includes(input.translationModel as typeof GEMINI_FREE_MODELS[number])) {
+    res.status(400).json({ error: `استخدم أحد النماذج المجانية المدعومة: ${GEMINI_FREE_MODELS.join(" أو ")}` }); return;
+  }
+  if (input.translationProvider === "openai" && !process.env.OPENAI_API_KEY) {
+    res.status(400).json({ error: "أضف OPENAI_API_KEY إلى أسرار Replit؛ لا يستخدم OpenAI قبل ضبط المفتاح واختبار الاتصال" }); return;
+  }
+  const current = await settings();
+  const translationChanged = current.translationProvider !== input.translationProvider || current.translationModel !== input.translationModel;
+  if (translationChanged && input.translationProvider !== "disabled") {
+    const verified = await getSetting<TranslationTestRecord | null>("translation_test", null);
+    if (!verified?.ok || verified.provider !== input.translationProvider || verified.model !== input.translationModel.trim()) {
+      res.status(400).json({ error: "اختبر المزود والنموذج المحددين بنجاح قبل حفظهما أو تفعيلهما" }); return;
+    }
   }
   await setSetting("settings", input);
   await audit("info", "settings", "تم تحديث الإعدادات العامة");
@@ -143,6 +154,25 @@ operationsRouter.post("/preview/send", async (req, res): Promise<void> => {
 operationsRouter.get("/services", async (_req, res) => {
   await pool.query("SELECT 1");
   const config = await settings();
+  const translationTest = await getSetting<TranslationTestRecord | null>("translation_test", null);
+  const matchingTranslationTest = translationTest?.provider === config.translationProvider &&
+    translationTest.model === config.translationModel ? translationTest : null;
+  const translationCredentialMissing = config.translationProvider === "gemini" ? !process.env.GEMINI_API_KEY
+    : config.translationProvider === "openai" ? !process.env.OPENAI_API_KEY
+    : config.translationProvider === "deepl" ? !process.env.DEEPL_API_KEY
+    : config.translationProvider === "replit" ? !process.env.AI_INTEGRATIONS_OPENAI_BASE_URL
+    : false;
+  const translationStatus = config.translationProvider === "disabled" ? "disabled"
+    : translationCredentialMissing ? "error"
+    : !matchingTranslationTest ? "unverified"
+    : matchingTranslationTest.ok ? "connected" : "error";
+  const translationDetail = config.translationProvider === "disabled" ? "الترجمة معطلة؛ اختر مزوداً واختبره قبل التفعيل."
+    : translationCredentialMissing ? config.translationProvider === "gemini" ? "مفتاح GEMINI_API_KEY غير موجود في أسرار Replit."
+      : config.translationProvider === "openai" ? "مفتاح OPENAI_API_KEY غير موجود؛ OpenAI API قد يترتب عليه رسم ولا يعمل تلقائياً."
+      : config.translationProvider === "deepl" ? "مفتاح DEEPL_API_KEY غير موجود في أسرار Replit."
+      : "خدمة Replit AI غير مُعدّة."
+    : matchingTranslationTest ? matchingTranslationTest.message
+    : "لم يُختبر المزود والنموذج المحفوظان بطلب ترجمة فعلي.";
   const market = await marketQuotes();
   const marketError = await getSetting("market_error", "");
   res.json(GetServicesResponse.parse([
@@ -152,12 +182,16 @@ operationsRouter.get("/services", async (_req, res) => {
     { id: "worker", name: "عامل المعالجة", ...workerState },
     { id: "market", name: "مزود أسعار السوق", status: marketError ? "error" : market.length === 2 && market.every(p => !p.stale) ? "connected" : "unverified",
       detail: marketError || "Coinbase للبيتكوين • Gold API للذهب • المقارنة بآخر قراءة ناجحة", checkedAt: market[0]?.updatedAt ?? null },
-    { id: "translation", name: "خدمة الترجمة",
-      status: config.translationProvider === "disabled" ? "disabled" : config.translationProvider === "gemini" && !process.env.GEMINI_API_KEY ? "error" : "configured",
-      detail: config.translationProvider === "replit" ? "Replit AI / OpenAI — الاستخدام مدفوع من الأرصدة؛ صلاحية الخدمة تُختبر عند المعاينة"
-        : config.translationProvider === "deepl" ? "DeepL — صلاحية الخدمة تُختبر عند المعاينة"
-        : config.translationProvider === "gemini" ? `Google Gemini API — ${GEMINI_FREE_MODEL} ضمن الحصة المجانية؛ تجاوز الحصة يعتمد على إعداد فوترة Google`
-        : "الترجمة معطلة؛ اختر مزوداً ثم فعّلها لكل مصدر", checkedAt: null },
+    { id: "translation", name: "خدمة الترجمة", status: translationStatus, detail: translationDetail,
+      checkedAt: matchingTranslationTest?.checkedAt ?? null },
   ]));
+});
+operationsRouter.post("/translation/test", async (req, res) => {
+  const input = TranslationTestInput.parse(req.body);
+  const result = await testTranslationProvider(input.provider as TranslationProvider, input.model.trim());
+  await audit(result.ok ? "info" : "warning", "translation", result.ok
+    ? "نجح اختبار الترجمة الفعلي."
+    : "فشل اختبار الترجمة الفعلي؛ راجع الرسالة الآمنة في صفحة الترجمة.");
+  res.json(TranslationTestResponse.parse(result));
 });
 operationsRouter.post("/telegram/qr", async (_req, res) => { res.json(await beginQr()); });

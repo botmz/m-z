@@ -41,3 +41,7 @@ export * from './settingsTranslationProvider';
 export * from './sourceRoutingInput';
 export * from './telegramQrPasswordInput';
 export * from './testInput';
+export * from './translationTestInput';
+export * from './translationTestInputProvider';
+export * from './translationTestResponse';
+export * from './translationTestResponseProvider';

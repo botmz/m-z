@@ -1,6 +1,9 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { GEMINI_FREE_MODEL, protectTokens, requestGeminiTranslation, restoreTokens } from "../src/lib/translation";
+import {
+  GEMINI_FREE_MODEL, GEMINI_FREE_MODELS, geminiHttpError, protectTokens, requestGeminiTranslation,
+  requestOpenAITranslation, restoreTokens,
+} from "../src/lib/translation";
 import { acceptsMessage, containsLink, sourceLink, splitText, originalHtml, escapeHtml, marketPriceLine, compose } from "../src/lib/composition";
 import { removeSourceReferences } from "../src/lib/source-reference";
 import { direction } from "../src/lib/market";
@@ -38,6 +41,7 @@ test("Gemini free translation uses the fixed model and keeps its API key out of 
     "⟦MZ0⟧ hello",
     "Arabic",
     "test-secret",
+    GEMINI_FREE_MODEL,
     async (input, init) => {
       requestUrl = String(input);
       requestOptions = init;
@@ -58,7 +62,7 @@ test("Gemini free translation uses the fixed model and keeps its API key out of 
 });
 test("Gemini quota failures explain the free limit without exposing response content", async () => {
   await assert.rejects(
-    requestGeminiTranslation("hello", "ar", "test-secret", async () => new Response(
+    requestGeminiTranslation("hello", "ar", "test-secret", GEMINI_FREE_MODEL, async () => new Response(
       JSON.stringify({ error: { message: "provider response detail" } }),
       { status: 429 },
     )),
@@ -70,6 +74,39 @@ test("Gemini quota failures explain the free limit without exposing response con
       return true;
     },
   );
+});
+test("Gemini free model choices are current and quota failures differ from request-rate limits", () => {
+  assert.deepEqual(GEMINI_FREE_MODELS, ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]);
+  assert.match(geminiHttpError(429, "per day free tier quota"), /الحصة المجانية/);
+  assert.match(geminiHttpError(429, "requests per minute RPM"), /حد سرعة/);
+  assert.match(geminiHttpError(404), /غير متاح/);
+  assert.match(geminiHttpError(403), /GEMINI_API_KEY/);
+});
+test("OpenAI API translation keeps its key in the header and does not retry", async () => {
+  let requestUrl = "";
+  let requestOptions: RequestInit | undefined;
+  let calls = 0;
+  const translated = await requestOpenAITranslation(
+    "⟦MZ0⟧ hello",
+    "Arabic",
+    "test-secret",
+    "gpt-5-mini",
+    async (input, init) => {
+      calls++;
+      requestUrl = String(input);
+      requestOptions = init;
+      return new Response(JSON.stringify({ choices: [{ message: { content: "⟦MZ0⟧ مرحباً" } }] }), { status: 200 });
+    },
+  );
+  assert.equal(translated, "⟦MZ0⟧ مرحباً");
+  assert.equal(requestUrl, "https://api.openai.com/v1/chat/completions");
+  assert.equal(calls, 1);
+  const headers = new Headers(requestOptions?.headers);
+  assert.equal(headers.get("authorization"), "Bearer test-secret");
+  const body = JSON.parse(String(requestOptions?.body));
+  assert.equal(body.model, "gpt-5-mini");
+  assert.equal(body.generationConfig, undefined);
+  assert.equal(body.max_completion_tokens, 8192);
 });
 test("market direction uses only the previous successful reading", () => {
   assert.equal(direction(10, null), "neutral");
@@ -168,6 +205,20 @@ test("route hide-source option runs before composition while disabled routes kee
   assert(preserved.text.includes("https://t.me/unit_test/3"));
   assert(!hidden.text.includes("t.me/unit_test"));
   assert(!hidden.text.includes(source.name));
+});
+test("a successful provider translation is the body sent by message composition", async () => {
+  const destination: Channel = { ...source, id: -2, kind: "destination", name: "Destination", format: "plain" };
+  const translated = await compose(
+    { ...source, translate: true },
+    destination,
+    "Gold price rose 2.5 percent.",
+    undefined,
+    [],
+    false,
+    async () => ({ text: "ارتفع سعر الذهب 2.5 بالمئة.", status: "translated" }),
+  );
+  assert.equal(translated.text, "ارتفع سعر الذهب 2.5 بالمئة.");
+  assert.equal(translated.translationStatus, "translated");
 });
 test("market price line omits provider and timestamp while retaining stale-price warning", () => {
   const fresh = marketPriceLine("BTC/USD", 81671.65, "down", false);

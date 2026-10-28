@@ -222,6 +222,7 @@ export const SettingsTranslationProvider = {
   replit: 'replit',
   deepl: 'deepl',
   gemini: 'gemini',
+  openai: 'openai',
 } as const;
 
 export interface Settings {
@@ -244,6 +245,44 @@ export interface Settings {
      * @maximum 10
      */
   maxAttempts: number;
+}
+
+export type TranslationTestInputProvider = typeof TranslationTestInputProvider[keyof typeof TranslationTestInputProvider];
+
+
+export const TranslationTestInputProvider = {
+  replit: 'replit',
+  deepl: 'deepl',
+  gemini: 'gemini',
+  openai: 'openai',
+} as const;
+
+export interface TranslationTestInput {
+  provider: TranslationTestInputProvider;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
+  model: string;
+}
+
+export type TranslationTestResponseProvider = typeof TranslationTestResponseProvider[keyof typeof TranslationTestResponseProvider];
+
+
+export const TranslationTestResponseProvider = {
+  replit: 'replit',
+  deepl: 'deepl',
+  gemini: 'gemini',
+  openai: 'openai',
+} as const;
+
+export interface TranslationTestResponse {
+  ok: boolean;
+  provider: TranslationTestResponseProvider;
+  model: string;
+  checkedAt: string;
+  message: string;
+  translatedText: string;
 }
 
 export type MarketQuoteDirection = typeof MarketQuoteDirection[keyof typeof MarketQuoteDirection];

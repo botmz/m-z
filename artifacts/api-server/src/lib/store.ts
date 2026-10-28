@@ -18,7 +18,7 @@ export async function settings(): Promise<Settings> {
 }
 export function safeError(error: unknown): string {
   let message = error instanceof Error ? error.message : "خطأ غير معروف";
-  for (const key of ["BOT_TOKEN", "API_HASH", "API_ID", "SESSION_SECRET", "ADMIN_INITIAL_PASSWORD", "DEEPL_API_KEY", "GEMINI_API_KEY", "AI_INTEGRATIONS_OPENAI_API_KEY"]) {
+  for (const key of ["BOT_TOKEN", "API_HASH", "API_ID", "SESSION_SECRET", "ADMIN_INITIAL_PASSWORD", "DEEPL_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY", "AI_INTEGRATIONS_OPENAI_API_KEY"]) {
     const value = process.env[key];
     if (value) message = message.split(value).join("[محجوب]");
   }

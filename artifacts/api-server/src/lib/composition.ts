@@ -55,12 +55,13 @@ export async function compose(
   messageId?: number,
   entities: TelegramTextEntity[] = [],
   hideSourceLink = false,
+  translator: typeof translate = translate,
 ) {
   const cleanedBody = hideSourceLink
     ? removeSourceReferences(text, entities, source.username, source.name)
     : { text, entities };
   const translated = cleanedBody.text.trim()
-    ? await translate(cleanedBody.text, source)
+    ? await translator(cleanedBody.text, source)
     : { text: "", status: "not_requested" };
   const warnings: string[] = [];
   if (translated.warning) warnings.push(translated.warning);

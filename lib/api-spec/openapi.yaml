@@ -233,6 +233,20 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Settings' }
+  /mz/translation/test:
+    post:
+      operationId: testTranslation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TranslationTestInput' }
+      responses:
+        '200':
+          description: Actual provider translation test; errors are returned without secrets
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TranslationTestResponse' }
   /mz/market:
     get:
       operationId: getMarket
@@ -494,10 +508,26 @@ components:
       properties:
         marketInterval: { type: integer, minimum: 60, maximum: 86400 }
         marketStaleMinutes: { type: integer, minimum: 1, maximum: 1440 }
-        translationProvider: { type: string, enum: [disabled, replit, deepl, gemini] }
+        translationProvider: { type: string, enum: [disabled, replit, deepl, gemini, openai] }
         translationModel: { type: string, maxLength: 100 }
         timezone: { type: string, default: Asia/Jerusalem }
         maxAttempts: { type: integer, minimum: 1, maximum: 10 }
+    TranslationTestInput:
+      type: object
+      required: [provider, model]
+      properties:
+        provider: { type: string, enum: [replit, deepl, gemini, openai] }
+        model: { type: string, minLength: 1, maxLength: 100 }
+    TranslationTestResponse:
+      type: object
+      required: [ok, provider, model, checkedAt, message, translatedText]
+      properties:
+        ok: { type: boolean }
+        provider: { type: string, enum: [replit, deepl, gemini, openai] }
+        model: { type: string }
+        checkedAt: { type: string, format: date-time }
+        message: { type: string }
+        translatedText: { type: string }
     MarketQuote:
       type: object
       required: [symbol, price, previousPrice, direction, provider, updatedAt, stale]

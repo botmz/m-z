@@ -419,7 +419,7 @@ export const getSettingsResponseMaxAttemptsMax = 10;
 export const GetSettingsResponse = zod.object({
   "marketInterval": zod.number().int().min(getSettingsResponseMarketIntervalMin).max(getSettingsResponseMarketIntervalMax),
   "marketStaleMinutes": zod.number().int().min(1).max(getSettingsResponseMarketStaleMinutesMax),
-  "translationProvider": zod.enum(['disabled', 'replit', 'deepl', 'gemini']),
+  "translationProvider": zod.enum(['disabled', 'replit', 'deepl', 'gemini', 'openai']),
   "translationModel": zod.string().max(getSettingsResponseTranslationModelMax),
   "timezone": zod.string().default(getSettingsResponseTimezoneDefault),
   "maxAttempts": zod.number().int().min(1).max(getSettingsResponseMaxAttemptsMax)
@@ -441,7 +441,7 @@ export const saveSettingsBodyMaxAttemptsMax = 10;
 export const SaveSettingsBody = zod.object({
   "marketInterval": zod.number().int().min(saveSettingsBodyMarketIntervalMin).max(saveSettingsBodyMarketIntervalMax),
   "marketStaleMinutes": zod.number().int().min(1).max(saveSettingsBodyMarketStaleMinutesMax),
-  "translationProvider": zod.enum(['disabled', 'replit', 'deepl', 'gemini']),
+  "translationProvider": zod.enum(['disabled', 'replit', 'deepl', 'gemini', 'openai']),
   "translationModel": zod.string().max(saveSettingsBodyTranslationModelMax),
   "timezone": zod.string().default(saveSettingsBodyTimezoneDefault),
   "maxAttempts": zod.number().int().min(1).max(saveSettingsBodyMaxAttemptsMax)
@@ -462,10 +462,29 @@ export const saveSettingsResponseMaxAttemptsMax = 10;
 export const SaveSettingsResponse = zod.object({
   "marketInterval": zod.number().int().min(saveSettingsResponseMarketIntervalMin).max(saveSettingsResponseMarketIntervalMax),
   "marketStaleMinutes": zod.number().int().min(1).max(saveSettingsResponseMarketStaleMinutesMax),
-  "translationProvider": zod.enum(['disabled', 'replit', 'deepl', 'gemini']),
+  "translationProvider": zod.enum(['disabled', 'replit', 'deepl', 'gemini', 'openai']),
   "translationModel": zod.string().max(saveSettingsResponseTranslationModelMax),
   "timezone": zod.string().default(saveSettingsResponseTimezoneDefault),
   "maxAttempts": zod.number().int().min(1).max(saveSettingsResponseMaxAttemptsMax)
+})
+
+
+export const testTranslationBodyModelMax = 100;
+
+
+
+export const TestTranslationBody = zod.object({
+  "provider": zod.enum(['replit', 'deepl', 'gemini', 'openai']),
+  "model": zod.string().min(1).max(testTranslationBodyModelMax)
+})
+
+export const TestTranslationResponse = zod.object({
+  "ok": zod.boolean(),
+  "provider": zod.enum(['replit', 'deepl', 'gemini', 'openai']),
+  "model": zod.string(),
+  "checkedAt": zod.coerce.date(),
+  "message": zod.string(),
+  "translatedText": zod.string()
 })
 
 

@@ -13,4 +13,5 @@ export const SettingsTranslationProvider = {
   replit: 'replit',
   deepl: 'deepl',
   gemini: 'gemini',
+  openai: 'openai',
 } as const;
