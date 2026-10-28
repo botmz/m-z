@@ -15,4 +15,8 @@ test("the services page restores the 2FA field and Arabic Telegram error from po
   assert.match(retryBlock, /data-testid="input-telegram-2fa-password"/);
   assert.match(source, /setQueryData\(getGetTelegramQrQueryKey\(\), result\)/);
   assert.match(source, /setPassword\(''\)/);
+  assert.match(source, /s\.status === 'reauthorization_required'/);
+  assert.match(source, /href="#telegram-qr"/);
+  assert.match(source, /id="telegram-qr"/);
+  assert.match(source, /انتقل إلى إعادة التفويض برمز QR/);
 });

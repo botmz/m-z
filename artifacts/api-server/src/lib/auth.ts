@@ -5,6 +5,14 @@ import { pool, audit } from "./store";
 
 const cookieName = "mz_session";
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");
+
+export class TelegramSessionDecryptionError extends Error {
+  constructor() {
+    super("Saved Telegram session cannot be used");
+    this.name = "TelegramSessionDecryptionError";
+  }
+}
+
 export async function initializeAdmin() {
   if (!process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 32) {
     throw new Error("يلزم SESSION_SECRET عشوائي بطول 32 حرفاً على الأقل لتشفير جلسة Telegram");
@@ -29,10 +37,15 @@ export function encrypt(text: string) {
 }
 export function decrypt(text: string) {
   const key = createHash("sha256").update(process.env.SESSION_SECRET!).digest();
-  const raw = Buffer.from(text, "base64");
-  const decipher = createDecipheriv("aes-256-gcm", key, raw.subarray(0, 12));
-  decipher.setAuthTag(raw.subarray(12, 28));
-  return Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]).toString("utf8");
+  try {
+    const raw = Buffer.from(text, "base64");
+    if (raw.length < 28) throw new Error("Invalid saved session");
+    const decipher = createDecipheriv("aes-256-gcm", key, raw.subarray(0, 12));
+    decipher.setAuthTag(raw.subarray(12, 28));
+    return Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]).toString("utf8");
+  } catch {
+    throw new TelegramSessionDecryptionError();
+  }
 }
 function sessionToken(req: Request): string {
   const cookies = req.headers.cookie?.split(";").map(v => v.trim()) ?? [];

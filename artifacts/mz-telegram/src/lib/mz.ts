@@ -92,6 +92,7 @@ const LABELS: Record<string, [string, Tone]> = {
   unknown: ['إرسال غير مؤكد', 'bad'],
   unverified: ['لم يُختبر', 'warn'],
   not_authorized: ['بانتظار تفويض Telegram', 'warn'],
+  reauthorization_required: ['يلزم إعادة التفويض', 'bad'],
   configured: ['مُعدّ ولم يُختبر', 'warn'],
   retrying: ['بانتظار إعادة المحاولة', 'warn'],
   processing: ['قيد المعالجة', 'warn'],

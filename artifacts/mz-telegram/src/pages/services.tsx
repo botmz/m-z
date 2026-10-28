@@ -159,6 +159,15 @@ export default function ServicesPage() {
                 <div className="min-w-0 flex-1 basis-56">
                   <div className="font-bold">{s.name}</div>
                   <p className="text-sm text-muted-foreground">{s.detail}</p>
+                  {s.id === 'reader' && s.status === 'reauthorization_required' && (
+                    <a
+                      href="#telegram-qr"
+                      className="mt-2 inline-flex text-xs font-semibold text-gold underline underline-offset-4 hover:text-gold/80"
+                      data-testid="link-reader-reauthorize"
+                    >
+                      انتقل إلى إعادة التفويض برمز QR
+                    </a>
+                  )}
                 </div>
                 <div className="text-end">
                   <StatusBadge status={s.status} label={statusInfo(s.status).label} />
@@ -169,7 +178,9 @@ export default function ServicesPage() {
           </ul>
         )}
       </Panel>
-      <QrPanel />
+      <div id="telegram-qr" className="scroll-mt-6">
+        <QrPanel />
+      </div>
     </>
   );
 }

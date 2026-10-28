@@ -73,7 +73,7 @@ test("missing saved session reports a safe not-authorized status without creatin
   assert.equal(errors.length, 0);
 });
 
-test("invalid encrypted sessions and client errors never appear in status or audit output", async () => {
+test("unusable saved sessions request QR reauthorization without exposing session data", async () => {
   const previousSecret = process.env.SESSION_SECRET;
   process.env.SESSION_SECRET = testSecret;
   try {
@@ -93,20 +93,35 @@ test("invalid encrypted sessions and client errors never appear in status or aud
     });
 
     assert.equal(invalidClient, undefined);
-    assert.equal(state.status, "error");
-    assert.equal(state.detail, "تعذر استعادة جلسة Telegram المحفوظة؛ أعد التفويض");
+    assert.equal(state.status, "reauthorization_required");
+    assert.equal(state.detail, "جلسة Telegram المحفوظة غير قابلة للاستخدام؛ أعد تفويض الحساب عبر رمز QR");
     assert.deepEqual(errors, [state.detail]);
+    const output = JSON.stringify({ state, errors });
+    assert(!output.includes(plaintextSession));
+    assert(!output.includes(encryptedSession));
+  } finally {
+    if (previousSecret === undefined) delete process.env.SESSION_SECRET;
+    else process.env.SESSION_SECRET = previousSecret;
+  }
+});
 
-    state.status = "not_authorized";
-    state.detail = "pending";
-    errors.length = 0;
+test("temporary Telegram connection failures stay distinct from reauthorization and hide session data", async () => {
+  const previousSecret = process.env.SESSION_SECRET;
+  process.env.SESSION_SECRET = testSecret;
+  try {
+    const plaintextSession = secret;
+    const encryptedSession = encrypt(plaintextSession);
+    const state = { status: "connected", detail: "old state", checkedAt: null as string | null };
+    const errors: string[] = [];
+    let disconnected = 0;
+
     const failedClient = await recoverTelegramReaderSession({
-      loadEncryptedSession: async () => encrypt(plaintextSession),
+      loadEncryptedSession: async () => encryptedSession,
       decryptSession: decrypt,
       createClient: () => ({
         connect: async () => { throw new Error(`Telegram error included ${plaintextSession}`); },
         isUserAuthorized: async () => true,
-        disconnect: async () => {},
+        disconnect: async () => { disconnected++; },
       }),
       attachHandlers: () => assert.fail("failed client must not attach"),
       state,
@@ -114,11 +129,41 @@ test("invalid encrypted sessions and client errors never appear in status or aud
     });
 
     assert.equal(failedClient, undefined);
-    assert.equal(state.status, "error");
+    assert.equal(disconnected, 1);
+    assert.equal(state.status, "disconnected");
+    assert.match(state.detail, /مؤقتاً/);
     assert.deepEqual(errors, [state.detail]);
     const output = JSON.stringify({ state, errors });
     assert(!output.includes(plaintextSession));
     assert(!output.includes(encryptedSession));
+  } finally {
+    if (previousSecret === undefined) delete process.env.SESSION_SECRET;
+    else process.env.SESSION_SECRET = previousSecret;
+  }
+});
+
+test("client configuration failures are not reported as temporary network failures", async () => {
+  const previousSecret = process.env.SESSION_SECRET;
+  process.env.SESSION_SECRET = testSecret;
+  try {
+    const state = { status: "connected", detail: "old state", checkedAt: null as string | null };
+    const errors: string[] = [];
+
+    const client = await recoverTelegramReaderSession({
+      loadEncryptedSession: async () => encrypt(secret),
+      decryptSession: decrypt,
+      createClient: () => { throw new Error("private configuration detail"); },
+      attachHandlers: () => assert.fail("an unconfigured client must not attach"),
+      state,
+      reportError: async message => { errors.push(message); },
+    });
+
+    assert.equal(client, undefined);
+    assert.equal(state.status, "error");
+    assert.match(state.detail, /إعداد الخدمة/);
+    assert.deepEqual(errors, [state.detail]);
+    assert(!JSON.stringify({ state, errors }).includes("private configuration detail"));
+    assert(!JSON.stringify({ state, errors }).includes(secret));
   } finally {
     if (previousSecret === undefined) delete process.env.SESSION_SECRET;
     else process.env.SESSION_SECRET = previousSecret;
