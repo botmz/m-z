@@ -57,7 +57,7 @@ type DestinationTestDependencies = {
 export async function testDestination(
   id: number,
   username: string,
-  send: boolean,
+  _send: boolean,
   dependencies: DestinationTestDependencies = {},
 ) {
   const api = dependencies.api ?? botApi;
@@ -77,10 +77,9 @@ export async function testDestination(
     if (member.status !== "creator" && !(member.status === "administrator" && member.can_post_messages)) {
       throw new Error("أضف البوت مشرفاً للقناة مع صلاحية نشر الرسائل");
     }
-    if (send) await api("sendMessage", { chat_id: chat.id, text: "MZ Telegram Bots\nرسالة اختبار اتصال وصلاحية النشر." });
     await updateDestination(Math.abs(id), "ready", null);
-    await writeAudit("info", "telegram", send ? `تم إرسال رسالة الاختبار إلى ${username}` : `تم التحقق من صلاحية النشر إلى ${username}`);
-    return { ok: true, message: send ? "تم إرسال رسالة الاختبار فعلياً" : "تم التحقق من صلاحية نشر البوت" };
+    await writeAudit("info", "telegram", `تم التحقق من صلاحية نشر البوت إلى ${username} دون إرسال رسالة`);
+    return { ok: true, message: "تم التحقق من صلاحية نشر البوت دون إرسال أي رسالة" };
   } catch (e) {
     const message = destinationTestErrorMessage(e);
     await updateDestination(Math.abs(id), "error", message);

@@ -4,7 +4,7 @@ import {
   GEMINI_FREE_MODEL, GEMINI_FREE_MODELS, geminiHttpError, protectTokens, requestGeminiTranslation,
   requestOpenAITranslation, restoreTokens, translationServiceState, translate, isEnglishText, validateTranslation, needsTranslation,
 } from "../src/lib/translation";
-import { acceptsMessage, containsLink, sourceLink, splitText, originalHtml, escapeHtml, marketPriceLine, compose, createSendPlan } from "../src/lib/composition";
+import { acceptsMessage, containsLink, sourceLink, splitText, originalHtml, escapeHtml, marketPriceLine, compose, createSendPlan, isBotTestMessage } from "../src/lib/composition";
 import { removeSourceReferences, removeTextLinks } from "../src/lib/source-reference";
 import { direction } from "../src/lib/market";
 import { channelRow, normalizeUsername, sameTelegramUsername, pool, getSetting, setSetting, settings, claimDelivery, type Channel } from "../src/lib/store";
@@ -178,6 +178,13 @@ test("private links, arbitrary URLs, users and malformed references are rejected
   for (const value of ["https://t.me/+abc", "https://evil.test/channel", "@a", "t.me/c/123/1", "x';DELETE"]) assert.throws(() => normalizeUsername(value));
 });
 test("disabled sources cannot enter routing", () => { assert(!acceptsMessage({ ...source, enabled: false }, "BUY BTC", false)); });
+test("bot connectivity test posts are skipped instead of being forwarded with market and signature text", () => {
+  const testPost = "مرحباً 🥺🥺🥺 هذه رسالة اختبار للتحقق مما إذا كان البوت يعمل بشكل صحيح. يرجى تأكيد استلامك لهذه الرسالة";
+  assert(isBotTestMessage(testPost));
+  assert(!acceptsMessage(source, testPost, false));
+  assert(!acceptsMessage(source, testPost, true));
+  assert(!isBotTestMessage("شرح كيفية اختبار البوت في إصدار جديد"));
+});
 test("source link-removal option keeps linked messages instead of skipping them", () => {
   const sourceWithLinkFilter = { ...source, skipMessagesWithLinks: true };
   assert(containsLink("Read https://example.com/report"));

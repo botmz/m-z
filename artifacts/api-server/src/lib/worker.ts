@@ -1,7 +1,7 @@
 import { pool, getSetting, setSetting, settings, audit, safeError, channel, sameTelegramUsername, claimDelivery } from "./store";
 import { connectReader, readerConnected, readerState, catchUp, downloadSourceMedia, sourceMessageMediaKind } from "./telegram-reader";
 import { botApi, botState, testBot, TelegramApiError, AmbiguousSendError } from "./telegram-bot";
-import { compose, createSendPlan } from "./composition";
+import { compose, createSendPlan, isBotTestMessage } from "./composition";
 import { translate } from "./translation";
 import { refreshPrices } from "./market";
 import { logger } from "./logger";
@@ -73,6 +73,13 @@ async function processDelivery(id: number) {
   let attemptedSend = false;
   try {
     if (!await claimDelivery(id)) return;
+    if (isBotTestMessage(delivery.text ?? "")) {
+      const reason = "تم تجاوز رسالة اختبار البوت؛ لن تُرسل إلى الوجهة.";
+      await pool.query("UPDATE message_deliveries SET status='skipped',error=$2,updated_at=now() WHERE id=$1", [id, reason]);
+      await pool.query("INSERT INTO delivery_attempts(delivery_id,status,detail) VALUES($1,'skipped',$2)", [id, reason]);
+      await audit("warning", "delivery", reason);
+      return;
+    }
     delivery.attempts += 1;
     await pool.query("INSERT INTO delivery_attempts(delivery_id,status,detail) VALUES($1,'processing',$2)", [id, `محاولة ${delivery.attempts}`]);
     let plan: Part[] | null = Array.isArray(delivery.send_plan) ? delivery.send_plan : null;

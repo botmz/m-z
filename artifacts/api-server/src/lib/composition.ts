@@ -18,6 +18,13 @@ export function containsLink(text: string, entities: Array<{ className?: string;
   if (entities.some((entity) => entity.className === "MessageEntityUrl" || entity.className === "MessageEntityTextUrl")) return true;
   return /(?:\bhttps?:\/\/|\btg:\/\/|\bwww\.)[^\s<>"'،]+|\b(?:t\.me|telegram\.me)\/[^\s<>"'،]+/i.test(text);
 }
+export function isBotTestMessage(text: string) {
+  const normalized = text.normalize("NFKC").toLocaleLowerCase().replace(/\s+/g, " ");
+  const testPhrase = /(?:رسالة\s+اختبار|اختبار\s+رسالة|test\s+message|message\s+test)/i.test(normalized);
+  const botMention = /(?:البوت|بوت|bot)/i.test(normalized);
+  const verificationPhrase = /(?:يعمل|يشتغل|استلام|تأكيد|confirm|receive|working|works)/i.test(normalized);
+  return testPhrase && botMention && verificationPhrase;
+}
 export function acceptsMessage(
   source: Channel,
   text: string,
@@ -25,6 +32,7 @@ export function acceptsMessage(
   entities: Array<{ className?: string; url?: string }> = [],
 ) {
   if (!source.enabled) return false;
+  if (isBotTestMessage(text)) return false;
   if (source.filter === "text" && hasMedia) return false;
   if (source.filter === "recommendations" && text && !/(شراء|بيع|هدف|وقف|دخول|توصية|\bbuy\b|\bsell\b|entry|take.?profit|stop.?loss)/i.test(text)) return false;
   return Boolean(text || (hasMedia && source.mediaMode === "include"));

@@ -232,17 +232,15 @@ function ChannelForm({
 
 function TestDialog({ channel, onClose }: { channel: Channel; onClose: () => void }) {
   const test = useTestChannel();
-  const [confirm, setConfirm] = useState(false);
   const [sourceResult, setSourceResult] = useState<{ ok: boolean; message: string } | null>(null);
   const source = channel.kind === 'source';
   const needsReaderAuth = source && sourceResult && !sourceResult.ok && /(MTProto|تفويض)/i.test(sourceResult.message);
-  const run = (send: boolean) => {
+  const run = () => {
     setSourceResult(null);
-    test.mutate({ id: channel.id, data: { send } }, {
+    test.mutate({ id: channel.id, data: { send: false } }, {
       onSuccess: (r) => {
         if (source) setSourceResult(r);
         else reportResult(r);
-        if (send) setConfirm(false);
       },
       onError: (e) => reportError(e),
     });
@@ -256,7 +254,7 @@ function TestDialog({ channel, onClose }: { channel: Channel; onClose: () => voi
             <DialogDescription>
               {source
                 ? 'يفحص صلاحية القراءة بحساب Telegram المفوّض (MTProto) فقط؛ لا ينشر أي رسالة. فعّل العامل من صفحة الخدمات لبدء تحويل الرسائل.'
-                : 'أضف البوت مشرفاً في الوجهة مع صلاحية نشر الرسائل. الفحص لا يرسل شيئاً؛ إرسال الاختبار ينشر رسالة حقيقية.'}
+                : 'أضف البوت مشرفاً في الوجهة مع صلاحية نشر الرسائل. يفحص الاتصال والصلاحية دون نشر أي رسالة.'}
             </DialogDescription>
           </DialogHeader>
           {source && sourceResult && (
@@ -282,28 +280,13 @@ function TestDialog({ channel, onClose }: { channel: Channel; onClose: () => voi
           )}
           <DialogFooter className="gap-2">
             {source ? (
-              <Button variant="outline" onClick={() => run(false)} disabled={test.isPending} data-testid="button-test-check">فحص صلاحية القراءة</Button>
+              <Button variant="outline" onClick={run} disabled={test.isPending} data-testid="button-test-check">فحص صلاحية القراءة</Button>
             ) : (
-              <>
-                <Button variant="outline" onClick={() => run(false)} disabled={test.isPending} data-testid="button-test-check">فحص دون إرسال</Button>
-                <Button onClick={() => setConfirm(true)} disabled={test.isPending} data-testid="button-test-send">إرسال رسالة اختبار</Button>
-              </>
+              <Button variant="outline" onClick={run} disabled={test.isPending} data-testid="button-test-check">فحص صلاحية النشر دون إرسال</Button>
             )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <AlertDialog open={confirm} onOpenChange={setConfirm}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>تأكيد الإرسال</AlertDialogTitle>
-            <AlertDialogDescription>سيتم إرسال رسالة حقيقية إلى «{channel.name}». هل تريد المتابعة؟</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="gap-2">
-            <AlertDialogCancel>إلغاء</AlertDialogCancel>
-            <AlertDialogAction onClick={() => run(true)} data-testid="button-confirm-send">نعم، أرسل</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 }

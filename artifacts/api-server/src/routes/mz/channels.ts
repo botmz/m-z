@@ -53,7 +53,7 @@ channelRouter.post("/channels/:id/test", async (req, res) => {
   const { send } = TestChannelBody.parse(req.body);
   const current = await channel(id);
   if (current.kind === "source" && send) { res.status(400).json({ error: "لا نرسل رسائل اختبار إلى قنوات المصدر" }); return; }
-  res.json(current.kind === "source" ? await testSource(current) : await testDestination(id, current.username, send));
+  res.json(current.kind === "source" ? await testSource(current) : await testDestination(id, current.username, false));
 });
 channelRouter.put("/channels/:id/routing", async (req, res) => {
   const { id } = UpdateChannelParams.parse(req.params);

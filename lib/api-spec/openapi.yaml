@@ -419,7 +419,7 @@ components:
       type: object
       required: [send]
       properties:
-        send: { type: boolean, description: Explicit confirmation to send a test message }
+        send: { type: boolean, description: Retained for compatibility; destination checks never send test messages }
     RoutingRule:
       type: object
       required: [sourceId, destinationId, hideSourceLink, contentSettings]

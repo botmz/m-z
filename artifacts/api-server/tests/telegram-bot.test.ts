@@ -8,11 +8,11 @@ const username = "@example_channel";
 function destinationTest(member: { status: string; can_post_messages?: boolean }, options: {
   getChatError?: Error;
   getChatMemberError?: Error;
-} = {}) {
+} = {}, send = false) {
   const calls: Array<{ method: string; body: Record<string, unknown> }> = [];
   const updates: Array<{ id: number; status: "ready" | "error"; lastError: string | null }> = [];
   const audits: Array<{ level: string; category: string; message: string }> = [];
-  const result = testDestination(destinationId, username, false, {
+  const result = testDestination(destinationId, username, send, {
     api: async (method, body = {}) => {
       calls.push({ method, body });
       if (method === "getMe") return { id: 123, username: "mz_test_bot" };
@@ -63,7 +63,7 @@ test("permission errors explain how to restore publishing rights", () => {
 test("destination check accepts a channel owner without sending a message", async () => {
   const { result, calls, updates } = destinationTest({ status: "creator" });
 
-  assert.deepEqual(await result, { ok: true, message: "تم التحقق من صلاحية نشر البوت" });
+  assert.deepEqual(await result, { ok: true, message: "تم التحقق من صلاحية نشر البوت دون إرسال أي رسالة" });
   assert.deepEqual(calls.map(({ method }) => method), ["getMe", "getChat", "getChatMember"]);
   assert.deepEqual(calls[1], { method: "getChat", body: { chat_id: username } });
   assert.deepEqual(calls[2], {
@@ -71,6 +71,17 @@ test("destination check accepts a channel owner without sending a message", asyn
     body: { chat_id: -100123, user_id: 123 },
   });
   assert.deepEqual(updates, [{ id: 42, status: "ready", lastError: null }]);
+});
+
+test("a legacy request to send a destination test still never publishes a message", async () => {
+  const { result, calls } = destinationTest({ status: "creator" }, {}, true);
+
+  assert.deepEqual(await result, {
+    ok: true,
+    message: "تم التحقق من صلاحية نشر البوت دون إرسال أي رسالة",
+  });
+  assert.deepEqual(calls.map(({ method }) => method), ["getMe", "getChat", "getChatMember"]);
+  assert(!calls.some(({ method }) => method.startsWith("send")));
 });
 
 test("mocked destination check needs no BOT_TOKEN and never contacts Telegram", async () => {
