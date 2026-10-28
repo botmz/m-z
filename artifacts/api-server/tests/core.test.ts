@@ -10,9 +10,10 @@ import { direction } from "../src/lib/market";
 import { channelRow, normalizeUsername, sameTelegramUsername, pool, getSetting, setSetting, settings, claimDelivery, type Channel } from "../src/lib/store";
 import { CreateChannelBody, SaveChannelRoutingBody } from "@workspace/api-zod";
 import { replaceSourceRouting } from "../src/lib/routing";
-import { isVideoDocument } from "../src/lib/telegram-reader";
+import { ingest, isVideoDocument } from "../src/lib/telegram-reader";
 import { resolveWorkerHealth, WORKER_HEARTBEAT_STALE_AFTER_MS } from "../src/lib/worker-health";
 import { normalizeRouteContentSettings, routeAllowsMedia } from "../src/lib/route-content";
+import { Api } from "teleproto";
 
 const source: Channel = {
   id: 1, kind: "source", name: "Unit Test", username: "@unit_test", enabled: true,
@@ -686,6 +687,75 @@ test("concurrent workers can claim a queued delivery only once", async () => {
     if (messageId) await pool.query("DELETE FROM messages WHERE id=$1", [messageId]);
     if (destinationId) await pool.query("DELETE FROM destination_channels WHERE id=$1", [destinationId]);
     if (sourceId) await pool.query("DELETE FROM source_channels WHERE id=$1", [sourceId]);
+  }
+});
+test("ingest creates deliveries only for selected destinations and ignores duplicate messages", async () => {
+  const db = await pool.connect();
+  const suffix = `${process.pid}_${Date.now()}`;
+  const sourceUsername = `@mz_ingest_${suffix}`;
+  const telegramMessageId = Math.floor(Date.now() / 1000);
+  let sourceId: number | undefined;
+  const destinationIds: number[] = [];
+  try {
+    sourceId = (await db.query(
+      "INSERT INTO source_channels(name,username,enabled) VALUES($1,$2,true) RETURNING id",
+      [`ingest source ${suffix}`, sourceUsername],
+    )).rows[0].id;
+    const destinationUsernames = [
+      `@mz_ingest_selected_a_${suffix}`,
+      `@mz_ingest_selected_b_${suffix}`,
+      `@mz_ingest_unselected_${suffix}`,
+    ];
+    for (const [index, username] of destinationUsernames.entries()) {
+      destinationIds.push((await db.query(
+        "INSERT INTO destination_channels(name,username,enabled) VALUES($1,$2,true) RETURNING id",
+        [`ingest destination ${index} ${suffix}`, username],
+      )).rows[0].id);
+    }
+    await db.query(
+      "INSERT INTO routing_rules(source_id,destination_id) VALUES($1,$2),($1,$3)",
+      [sourceId, destinationIds[0], destinationIds[1]],
+    );
+    const sourceRow = (await db.query("SELECT * FROM source_channels WHERE id=$1", [sourceId])).rows[0];
+    const message = {
+      id: telegramMessageId,
+      message: "A Telegram message for explicitly selected destinations",
+      entities: [],
+      noforwards: false,
+      media: undefined,
+    } as unknown as Api.Message;
+
+    await ingest(channelRow(sourceRow, "source"), message);
+    await ingest(channelRow(sourceRow, "source"), message);
+
+    const persisted = await db.query(
+      `SELECT d.username, count(m.id)::int AS deliveries
+       FROM destination_channels d
+       LEFT JOIN message_deliveries md ON md.destination_id=d.id
+       LEFT JOIN messages m ON m.id=md.message_id
+         AND m.source_key=$1 AND m.telegram_message_id=$2
+       WHERE d.id=ANY($3::int[])
+       GROUP BY d.id,d.username ORDER BY d.username`,
+      [sourceUsername, telegramMessageId, destinationIds],
+    );
+    assert.deepEqual(persisted.rows, [
+      { username: destinationUsernames[2], deliveries: 0 },
+      { username: destinationUsernames[0], deliveries: 1 },
+      { username: destinationUsernames[1], deliveries: 1 },
+    ].sort((a, b) => a.username.localeCompare(b.username)));
+    const messageCount = await db.query(
+      "SELECT count(*)::int AS count FROM messages WHERE source_key=$1 AND telegram_message_id=$2",
+      [sourceUsername, telegramMessageId],
+    );
+    assert.equal(messageCount.rows[0].count, 1);
+  } finally {
+    await db.query(
+      "DELETE FROM messages WHERE source_key=$1 AND telegram_message_id=$2",
+      [sourceUsername, telegramMessageId],
+    );
+    if (sourceId) await db.query("DELETE FROM source_channels WHERE id=$1", [sourceId]);
+    if (destinationIds.length) await db.query("DELETE FROM destination_channels WHERE id=ANY($1::int[])", [destinationIds]);
+    db.release();
   }
 });
 test("editing a source replaces only its selected destinations and rolls back invalid choices", async () => {
