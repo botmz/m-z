@@ -48,23 +48,43 @@ export async function testBot() {
     return { ok: false, message: safeError(e) };
   }
 }
-export async function testDestination(id: number, username: string, send: boolean) {
+type DestinationTestDependencies = {
+  api?: (method: string, body?: Record<string, unknown>) => Promise<any>;
+  updateDestination?: (id: number, status: "ready" | "error", lastError: string | null) => Promise<void>;
+  audit?: typeof audit;
+};
+
+export async function testDestination(
+  id: number,
+  username: string,
+  send: boolean,
+  dependencies: DestinationTestDependencies = {},
+) {
+  const api = dependencies.api ?? botApi;
+  const updateDestination = dependencies.updateDestination ?? (async (destinationId, status, lastError) => {
+    if (status === "ready") {
+      await pool.query("UPDATE destination_channels SET status='ready',last_error=NULL WHERE id=$1", [destinationId]);
+    } else {
+      await pool.query("UPDATE destination_channels SET status='error',last_error=$2 WHERE id=$1", [destinationId, lastError]);
+    }
+  });
+  const writeAudit = dependencies.audit ?? audit;
   try {
-    const me = await botApi("getMe");
-    const chat = await botApi("getChat", { chat_id: username });
+    const me = await api("getMe");
+    const chat = await api("getChat", { chat_id: username });
     if (chat.type !== "channel") throw new Error("الوجهة يجب أن تكون قناة Telegram");
-    const member = await botApi("getChatMember", { chat_id: chat.id, user_id: me.id });
+    const member = await api("getChatMember", { chat_id: chat.id, user_id: me.id });
     if (member.status !== "creator" && !(member.status === "administrator" && member.can_post_messages)) {
       throw new Error("أضف البوت مشرفاً للقناة مع صلاحية نشر الرسائل");
     }
-    if (send) await botApi("sendMessage", { chat_id: chat.id, text: "MZ Telegram Bots\nرسالة اختبار اتصال وصلاحية النشر." });
-    await pool.query("UPDATE destination_channels SET status='ready',last_error=NULL WHERE id=$1", [Math.abs(id)]);
-    await audit("info", "telegram", send ? `تم إرسال رسالة الاختبار إلى ${username}` : `تم التحقق من صلاحية النشر إلى ${username}`);
+    if (send) await api("sendMessage", { chat_id: chat.id, text: "MZ Telegram Bots\nرسالة اختبار اتصال وصلاحية النشر." });
+    await updateDestination(Math.abs(id), "ready", null);
+    await writeAudit("info", "telegram", send ? `تم إرسال رسالة الاختبار إلى ${username}` : `تم التحقق من صلاحية النشر إلى ${username}`);
     return { ok: true, message: send ? "تم إرسال رسالة الاختبار فعلياً" : "تم التحقق من صلاحية نشر البوت" };
   } catch (e) {
     const message = destinationTestErrorMessage(e);
-    await pool.query("UPDATE destination_channels SET status='error',last_error=$2 WHERE id=$1", [Math.abs(id), message]);
-    await audit("error", "telegram", message);
+    await updateDestination(Math.abs(id), "error", message);
+    await writeAudit("error", "telegram", message);
     return { ok: false, message };
   }
 }
