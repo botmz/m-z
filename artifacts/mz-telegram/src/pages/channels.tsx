@@ -177,8 +177,8 @@ function ChannelForm({
               {routeSaveError && <div className="sm:col-span-2 rounded-md border border-danger/40 bg-danger/5 px-3 py-2 text-sm text-danger" role="alert" data-testid="text-route-save-error">{routeSaveError}</div>}
               <div className="sm:col-span-2"><Toggle id="translate" label="ترجمة الرسائل إلى العربية" checked={f.translate} onChange={(v) => { set('translate', v); if (v) set('targetLanguage', 'ar'); }} /></div>
               <div className="sm:col-span-2">
-                <Toggle id="skip-links" label="تجاهل الرسائل التي تحتوي على روابط" checked={f.skipMessagesWithLinks} onChange={(v) => set('skipMessagesWithLinks', v)} />
-                <p className="mt-1 text-xs text-muted-foreground">عند التفعيل لن تُرسل الرسالة كاملة إذا احتوت رابطاً ظاهراً أو مخفياً؛ ولن تُحذف من قناة المصدر.</p>
+                <Toggle id="skip-links" label="إزالة الروابط من نص الرسالة" checked={f.skipMessagesWithLinks} onChange={(v) => set('skipMessagesWithLinks', v)} />
+                <p className="mt-1 text-xs text-muted-foreground">عند التفعيل تُحذف الروابط الظاهرة فقط، وتبقى الكلمات المرتبطة برابط مخفي. تُرسل بقية الرسالة أو الوسيط ولا تُتجاهل الرسالة بسبب الرابط.</p>
               </div>
               {f.translate && (
                 <Field label="عند فشل الترجمة"><Sel value={f.translationFailure} onChange={(e) => set('translationFailure', e.target.value as ChannelInput['translationFailure'])} options={opts(failureLabels)} data-testid="select-failure" /></Field>

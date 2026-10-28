@@ -1,7 +1,7 @@
-import { translate } from "./translation";
+import { isEnglishText, translate } from "./translation";
 import { marketQuotes } from "./market";
 import { settings, type Channel } from "./store";
-import { removeSourceReferences, type TelegramTextEntity } from "./source-reference";
+import { removeSourceReferences, removeTextLinks, type TelegramTextEntity } from "./source-reference";
 
 export const escapeHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 export function sourceLink(username: string, messageId?: number) {
@@ -20,14 +20,13 @@ export function containsLink(text: string, entities: Array<{ className?: string;
 export function acceptsMessage(
   source: Channel,
   text: string,
-  hasPhoto: boolean,
+  hasMedia: boolean,
   entities: Array<{ className?: string; url?: string }> = [],
 ) {
   if (!source.enabled) return false;
-  if (source.skipMessagesWithLinks && containsLink(text, entities)) return false;
-  if (source.filter === "text" && hasPhoto) return false;
+  if (source.filter === "text" && hasMedia) return false;
   if (source.filter === "recommendations" && !/(شراء|بيع|هدف|وقف|دخول|توصية|\bbuy\b|\bsell\b|entry|take.?profit|stop.?loss)/i.test(text)) return false;
-  return Boolean(text || (hasPhoto && source.mediaMode === "include"));
+  return Boolean(text || (hasMedia && source.mediaMode === "include"));
 }
 // Preserve non-overlapping Telegram emphasis and text links without accepting HTML from message text.
 export function originalHtml(text: string, entities: any[] = []) {
@@ -57,11 +56,16 @@ export async function compose(
   hideSourceLink = false,
   translator: typeof translate = translate,
 ) {
-  const cleanedBody = hideSourceLink
+  const sourceCleanedBody = hideSourceLink
     ? removeSourceReferences(text, entities, source.username, source.name)
     : { text, entities };
+  const cleanedBody = source.skipMessagesWithLinks
+    ? removeTextLinks(sourceCleanedBody.text, sourceCleanedBody.entities)
+    : sourceCleanedBody;
   const translated = cleanedBody.text.trim()
-    ? await translator(cleanedBody.text, source)
+    ? source.translate && isEnglishText(cleanedBody.text)
+      ? await translator(cleanedBody.text, source)
+      : { text: cleanedBody.text, status: source.translate ? "not_english" : "not_requested" }
     : { text: "", status: "not_requested" };
   const warnings: string[] = [];
   if (translated.warning) warnings.push(translated.warning);
@@ -82,15 +86,17 @@ export async function compose(
   const sourcePrefix = hideSourceLink
     ? removeSourceReferences(source.prefix, [], source.username, source.name).text
     : source.prefix;
-  if (sourcePrefix) prefix.push(sourcePrefix);
+  const linkCleanedPrefix = source.skipMessagesWithLinks ? removeTextLinks(sourcePrefix).text : sourcePrefix;
+  if (linkCleanedPrefix) prefix.push(linkCleanedPrefix);
   const suffix: string[] = [];
   const sourceSuffix = hideSourceLink
     ? removeSourceReferences(source.suffix, [], source.username, source.name).text
     : source.suffix;
-  if (sourceSuffix) suffix.push(sourceSuffix);
+  const linkCleanedSuffix = source.skipMessagesWithLinks ? removeTextLinks(sourceSuffix).text : sourceSuffix;
+  if (linkCleanedSuffix) suffix.push(linkCleanedSuffix);
   const channelUrl = sourceLink(source.username);
   const existingText = [...prefix, translated.text, ...suffix].join("\n").toLowerCase();
-  if (source.attachSource && !hideSourceLink && !existingText.includes(channelUrl.toLowerCase())) {
+  if (source.attachSource && !hideSourceLink && !source.skipMessagesWithLinks && !existingText.includes(channelUrl.toLowerCase())) {
     suffix.push(`المصدر: ${source.name}\n${sourceLink(source.username, messageId)}`);
   }
   const renderedText = [...prefix, translated.text, ...suffix].filter(Boolean).join("\n\n");
@@ -112,4 +118,24 @@ export function splitText(text: string, max = 4000): string[] {
   }
   if (text) chunks.push(text);
   return chunks;
+}
+
+export type ComposedPart = { method: "sendMessage" | "sendMedia"; text: string; html?: string };
+export function createSendPlan(text: string, html: string, hasMedia: boolean, useHtml: boolean): ComposedPart[] {
+  const plan: ComposedPart[] = [];
+  if (hasMedia && text.length <= 1024) {
+    plan.push({ method: "sendMedia", text, ...(useHtml ? { html } : {}) });
+  } else {
+    if (hasMedia) plan.push({ method: "sendMedia", text: "" });
+    if (text.length <= 4000) {
+      if (text) plan.push({ method: "sendMessage", text, ...(useHtml ? { html } : {}) });
+    } else {
+      plan.push(...splitText(text).map((part) => ({
+        method: "sendMessage" as const,
+        text: part,
+        ...(useHtml ? { html: escapeHtml(part) } : {}),
+      })));
+    }
+  }
+  return plan;
 }

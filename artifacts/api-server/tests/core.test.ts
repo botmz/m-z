@@ -2,10 +2,10 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import {
   GEMINI_FREE_MODEL, GEMINI_FREE_MODELS, geminiHttpError, protectTokens, requestGeminiTranslation,
-  requestOpenAITranslation, restoreTokens, translationServiceState, translate,
+  requestOpenAITranslation, restoreTokens, translationServiceState, translate, isEnglishText,
 } from "../src/lib/translation";
 import { acceptsMessage, containsLink, sourceLink, splitText, originalHtml, escapeHtml, marketPriceLine, compose } from "../src/lib/composition";
-import { removeSourceReferences } from "../src/lib/source-reference";
+import { removeSourceReferences, removeTextLinks } from "../src/lib/source-reference";
 import { direction } from "../src/lib/market";
 import { channelRow, normalizeUsername, sameTelegramUsername, pool, getSetting, setSetting, settings, type Channel } from "../src/lib/store";
 import { CreateChannelBody, SaveChannelRoutingBody } from "@workspace/api-zod";
@@ -143,16 +143,90 @@ test("private links, arbitrary URLs, users and malformed references are rejected
   for (const value of ["https://t.me/+abc", "https://evil.test/channel", "@a", "t.me/c/123/1", "x';DELETE"]) assert.throws(() => normalizeUsername(value));
 });
 test("disabled sources cannot enter routing", () => { assert(!acceptsMessage({ ...source, enabled: false }, "BUY BTC", false)); });
-test("source link filtering ignores linked messages while preserving unlinked ones", () => {
+test("source link-removal option keeps linked messages instead of skipping them", () => {
   const sourceWithLinkFilter = { ...source, skipMessagesWithLinks: true };
   assert(containsLink("Read https://example.com/report"));
   assert(containsLink("Open the link", [{ className: "MessageEntityTextUrl", url: "https://example.com" }]));
   assert(containsLink("example.com", [{ className: "MessageEntityUrl" }]));
   assert(!containsLink("BTC/USD reached 80,000"));
-  assert(!acceptsMessage(sourceWithLinkFilter, "Trade setup https://example.com", false));
-  assert(!acceptsMessage(sourceWithLinkFilter, "More information", false, [{ className: "MessageEntityTextUrl", url: "https://example.com" }]));
+  assert(acceptsMessage(sourceWithLinkFilter, "Trade setup https://example.com", false));
+  assert(acceptsMessage(sourceWithLinkFilter, "More information", false, [{ className: "MessageEntityTextUrl", url: "https://example.com" }]));
   assert(acceptsMessage(sourceWithLinkFilter, "Trade setup without a link", false));
   assert(acceptsMessage(source, "Trade setup https://example.com", false));
+});
+test("link cleanup removes visible URLs, keeps hidden-link words, and preserves surrounding content", () => {
+  assert.equal(
+    removeTextLinks("Price rose 2.5% https://example.com/report.").text,
+    "Price rose 2.5%.",
+  );
+  assert.equal(
+    removeTextLinks("BUY BTC https://example.com/mid now; target 80,000").text,
+    "BUY BTC now; target 80,000",
+  );
+  assert.equal(
+    removeTextLinks("خبر عربي https://t.me/news/10، ثم https://example.com/a\nwww.example.org").text,
+    "خبر عربي ثم",
+  );
+  const hiddenText = "Read the report";
+  const hidden = removeTextLinks(hiddenText, [
+    { className: "MessageEntityTextUrl", offset: 9, length: 6, url: "https://hidden.example/report" },
+  ]);
+  assert.equal(hidden.text, hiddenText);
+  assert.deepEqual(hidden.entities, []);
+  const visibleEntity = "💰 visit https://example.org now";
+  const urlOffset = visibleEntity.indexOf("https://");
+  const entityCleaned = removeTextLinks(visibleEntity, [
+    { className: "MessageEntityUrl", offset: urlOffset, length: "https://example.org".length },
+  ]);
+  assert.equal(entityCleaned.text, "💰 visit now");
+  assert.deepEqual(removeTextLinks("No URLs here", []).text, "No URLs here");
+  assert.equal(removeTextLinks("https://only.example").text, "");
+  assert(acceptsMessage(source, "", true), "media remains eligible when URL removal empties its caption");
+  assert(!acceptsMessage(source, "", false), "an empty text-only post has no sendable content");
+});
+test("language detection translates English only and leaves Arabic and Spanish unchanged", async () => {
+  assert(isEnglishText("The price of gold rose sharply today."));
+  assert(isEnglishText("BUY BTC"));
+  assert(!isEnglishText("هذا نص عربي للاختبار"));
+  assert(!isEnglishText("El precio del oro subió esta mañana"));
+  assert(!isEnglishText("BTC/USD 90,000"));
+  let calls = 0;
+  const translator = async (text: string) => {
+    calls++;
+    return { text: `ترجمة: ${text}`, status: "translated" };
+  };
+  const destination: Channel = { ...source, id: -2, kind: "destination", username: "@destination", attachSource: false };
+  const english = await compose(
+    { ...source, translate: true, skipMessagesWithLinks: true, attachSource: false },
+    destination,
+    "Gold rose 2.5% https://example.com",
+    undefined,
+    [],
+    false,
+    translator,
+  );
+  const arabic = await compose(
+    { ...source, translate: true, attachSource: false },
+    destination,
+    "ارتفع الذهب بنسبة 2.5%",
+    undefined,
+    [],
+    false,
+    translator,
+  );
+  const spanish = await compose(
+    { ...source, translate: true, attachSource: false },
+    destination,
+    "El precio del oro subió",
+    undefined,
+    [],
+    false,
+    translator,
+  );
+  assert.equal(english.text, "ترجمة: Gold rose 2.5%");
+  assert.equal(arabic.text, "ارتفع الذهب بنسبة 2.5%");
+  assert.equal(spanish.text, "El precio del oro subió");
+  assert.equal(calls, 1);
 });
 test("recommendation filter matches Arabic and English but not unrelated text", () => {
   const s = { ...source, filter: "recommendations" as const };

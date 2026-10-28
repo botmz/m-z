@@ -5,6 +5,7 @@ import { Logger, LogLevel } from "teleproto/extensions/Logger.js";
 import { encrypt, decrypt } from "./auth";
 import { pool, getSetting, setSetting, audit, safeError, channelRow, type Channel } from "./store";
 import { acceptsMessage } from "./composition";
+import { removeTextLinks } from "./source-reference";
 import { validateTelegramApiCredentials } from "./telegram-api-credentials";
 import { OneTimeSecretGate } from "./one-time-secret-gate";
 import { signInWithQrCode } from "./telegram-qr-sign-in";
@@ -154,18 +155,21 @@ export async function ingest(source: Channel, message: Api.Message) {
     await audit("warning", "reader", `تم تجاهل رسالة من ${source.username}: المحتوى محمي من إعادة النشر`);
     return;
   }
-  const text = message.message ?? "";
-  const hasPhoto = message.media instanceof Api.MessageMediaPhoto;
-  if (!acceptsMessage(source, text, hasPhoto, message.entities ?? [])) return;
+  const originalText = message.message ?? "";
+  const originalEntities = (message.entities ?? []).map((e: any) => ({ className: e.className, offset: e.offset, length: e.length, url: e.url }));
+  const cleaned = source.skipMessagesWithLinks
+    ? removeTextLinks(originalText, originalEntities)
+    : { text: originalText, entities: originalEntities };
+  const hasMedia = Boolean(sendableMediaKind(message));
+  if (!acceptsMessage(source, cleaned.text, hasMedia, cleaned.entities)) return;
   const connection = await pool.connect();
   try {
     await connection.query("BEGIN");
     const current = await connection.query("SELECT enabled FROM source_channels WHERE id=$1", [source.id]);
     if (!current.rows[0]?.enabled) { await connection.query("ROLLBACK"); return; }
-    const entities = (message.entities ?? []).map((e: any) => ({ className: e.className, offset: e.offset, length: e.length, url: e.url }));
     const { rows } = await connection.query(`INSERT INTO messages(source_id,source_key,telegram_message_id,text,has_photo,entities)
       VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(source_key,telegram_message_id) DO NOTHING RETURNING id`,
-    [source.id, source.username, message.id, text, hasPhoto, JSON.stringify(entities)]);
+    [source.id, source.username, message.id, cleaned.text, hasMedia, JSON.stringify(cleaned.entities)]);
     if (rows[0]) {
       await connection.query(`INSERT INTO message_deliveries(message_id,destination_id,destination_key)
         SELECT $1,d.id,d.username FROM routing_rules r JOIN destination_channels d ON d.id=r.destination_id
@@ -211,12 +215,39 @@ export async function catchUp() {
     }
   } finally { catchingUp = false; }
 }
-export async function downloadPhoto(source: Channel, messageId: number) {
+export type SourceMedia = { kind: "photo" | "video"; mimeType: string; filename: string; buffer: Buffer };
+
+export function isVideoDocument(document: { mimeType?: string; attributes?: Array<{ className?: string }> } | null | undefined) {
+  return Boolean(document && (
+    document.mimeType?.toLowerCase().startsWith("video/") ||
+    document.attributes?.some((attribute) => attribute.className === "DocumentAttributeVideo")
+  ));
+}
+
+export function sendableMediaKind(message: Api.Message): "photo" | "video" | undefined {
+  if (message.media instanceof Api.MessageMediaPhoto) return "photo";
+  if (message.media instanceof Api.MessageMediaDocument && isVideoDocument(message.media.document as any)) return "video";
+  return undefined;
+}
+
+export async function downloadSourceMedia(source: Channel, messageId: number): Promise<SourceMedia> {
   if (!readerConnected() || !client) throw new Error("جلسة قراءة Telegram غير متصلة");
   const messages = await client.getMessages(source.username, { ids: [messageId] });
   if (!messages[0] || messages[0].noforwards) throw new Error("الصورة غير متاحة أو محمية من إعادة النشر");
+  const message = messages[0];
+  const kind = sendableMediaKind(message);
+  if (!kind) throw new Error("الوسيط لم يعد صورة أو فيديو قابلاً للإرسال");
   const buffer = await client.downloadMedia(messages[0], {});
-  if (!Buffer.isBuffer(buffer)) throw new Error("تعذر تنزيل الصورة");
-  if (buffer.length > 10 * 1024 * 1024) throw new Error("الصورة تتجاوز حد 10 ميغابايت للإرسال عبر Bot API");
-  return buffer;
+  if (!Buffer.isBuffer(buffer)) throw new Error("تعذر تنزيل الوسيط من قناة المصدر");
+  const document = message.media instanceof Api.MessageMediaDocument ? message.media.document as any : undefined;
+  const mimeType = kind === "photo" ? "image/jpeg"
+    : typeof document?.mimeType === "string" && document.mimeType.startsWith("video/") ? document.mimeType : "video/mp4";
+  const extension = mimeType.split("/")[1]?.split(";")[0]?.replace(/[^a-z0-9_-]/gi, "") || (kind === "photo" ? "jpg" : "mp4");
+  const maxSize = kind === "photo" ? 10 * 1024 * 1024 : 45 * 1024 * 1024;
+  if (buffer.length > maxSize) {
+    throw new Error(kind === "photo"
+      ? "الصورة تتجاوز حد 10 ميغابايت للإرسال عبر Bot API"
+      : "الفيديو يتجاوز حد 45 ميغابايت للإرسال عبر Bot API");
+  }
+  return { kind, mimeType, filename: `telegram-media.${extension}`, buffer };
 }

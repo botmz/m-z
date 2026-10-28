@@ -234,3 +234,108 @@ export function removeSourceReferences(
   remappedEntities.sort((a, b) => a.offset - b.offset || a.length - b.length);
   return { text: outputText, entities: remappedEntities };
 }
+
+/**
+ * Remove visible URL spans, keep the visible words of hidden text links, and
+ * remap all remaining Telegram entities after the text shifts. Telegram
+ * entity offsets are UTF-16 code units, matching JavaScript string indices.
+ */
+export function removeTextLinks(
+  text: string,
+  entities: TelegramTextEntity[] = [],
+): { text: string; entities: TelegramTextEntity[] } {
+  const ranges: Range[] = [];
+  const add = (start: number, end: number) => {
+    if (Number.isInteger(start) && Number.isInteger(end) && start >= 0 && end > start && end <= text.length) {
+      ranges.push({ start, end });
+    }
+  };
+  for (const entity of entities) {
+    if (
+      entity.className === "MessageEntityUrl" &&
+      Number.isInteger(entity.offset) &&
+      Number.isInteger(entity.length)
+    ) add(entity.offset, entity.offset + entity.length);
+  }
+  const visibleUrl = /(?<![\p{L}\p{N}_])(?:(?:https?:\/\/|tg:\/\/)|www\.)[^\s<>"'()[\]{}]+|(?<![\p{L}\p{N}_])(?:t\.me|telegram\.me)\/[^\s<>"'()[\]{}]+/giu;
+  for (const match of text.matchAll(visibleUrl)) {
+    const raw = match[0];
+    let length = raw.length;
+    while (length && /[.,،؛:!?؟]/u.test(raw[length - 1]!)) length--;
+    add(match.index!, match.index! + length);
+  }
+  const merged = mergeRanges(ranges);
+  const hasHiddenTextLink = entities.some((entity) => entity.className === "MessageEntityTextUrl");
+  if (!merged.length && !hasHiddenTextLink) return { text, entities };
+
+  const cleanedLines: { units: MappedUnit[]; newlineIndex?: number; start: number; end: number; linkRemoved: boolean }[] = [];
+  let rangeIndex = 0;
+  let lineStart = 0;
+  for (let index = 0; index <= text.length; index++) {
+    if (index !== text.length && text[index] !== "\n") continue;
+    const lineEnd = index;
+    const lineRanges = merged.filter((range) => range.start < lineEnd && range.end > lineStart);
+    const units: MappedUnit[] = [];
+    let currentRange = rangeIndex;
+    for (let offset = lineStart; offset < lineEnd; offset++) {
+      while (currentRange < merged.length && merged[currentRange]!.end <= offset) currentRange++;
+      const range = merged[currentRange];
+      if (range && range.start <= offset && offset < range.end) continue;
+      units.push({ value: text[offset]!, origin: offset });
+    }
+    cleanedLines.push({
+      units: lineRanges.length ? cleanLine(units, false, false) : units,
+      ...(index < text.length ? { newlineIndex: index } : {}),
+      start: lineStart,
+      end: lineEnd,
+      linkRemoved: lineRanges.length > 0,
+    });
+    while (rangeIndex < merged.length && merged[rangeIndex]!.end <= lineEnd) rangeIndex++;
+    lineStart = index + 1;
+  }
+
+  const keptLines: typeof cleanedLines = [];
+  let blankLine: (typeof cleanedLines)[number] | undefined;
+  for (const line of cleanedLines) {
+    if (!line.units.length) {
+      if (keptLines.length && !line.linkRemoved) blankLine ??= line;
+      continue;
+    }
+    if (keptLines.length && blankLine) keptLines.push(blankLine);
+    keptLines.push(line);
+    blankLine = undefined;
+  }
+  const output: MappedUnit[] = [];
+  for (let index = 0; index < keptLines.length; index++) {
+    const line = keptLines[index]!;
+    if (index > 0) {
+      const previous = keptLines[index - 1]!;
+      output.push({ value: "\n", origin: previous.newlineIndex ?? previous.end });
+    }
+    output.push(...line.units);
+  }
+
+  const outputText = output.map((unit) => unit.value).join("");
+  const remappedEntities: TelegramTextEntity[] = [];
+  for (const entity of entities) {
+    if (entity.className === "MessageEntityUrl" || entity.className === "MessageEntityTextUrl") continue;
+    if (!Number.isInteger(entity.offset) || !Number.isInteger(entity.length) || entity.offset < 0 || entity.length <= 0) continue;
+    const end = entity.offset + entity.length;
+    let runStart: number | undefined;
+    let runLength = 0;
+    const flush = () => {
+      if (runStart !== undefined && runLength) remappedEntities.push({ ...entity, offset: runStart, length: runLength });
+      runStart = undefined;
+      runLength = 0;
+    };
+    output.forEach((unit, outputIndex) => {
+      if (unit.origin >= entity.offset && unit.origin < end) {
+        if (runStart === undefined) runStart = outputIndex;
+        runLength++;
+      } else flush();
+    });
+    flush();
+  }
+  remappedEntities.sort((a, b) => a.offset - b.offset || a.length - b.length);
+  return { text: outputText, entities: remappedEntities };
+}

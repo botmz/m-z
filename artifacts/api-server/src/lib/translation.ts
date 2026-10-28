@@ -1,10 +1,24 @@
 import { createHash } from "node:crypto";
+import { franc } from "franc-min";
 import { pool, settings, audit, safeError, getSetting, setSetting } from "./store";
 import type { Channel } from "./store";
 
 export const GEMINI_FREE_MODELS = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"] as const;
 export const GEMINI_FREE_MODEL = GEMINI_FREE_MODELS[0];
 export type TranslationProvider = "gemini" | "openai" | "replit" | "deepl";
+const shortEnglishWords = new Set([
+  "buy", "sell", "gold", "bitcoin", "bullish", "bearish", "entry", "target", "stop",
+  "profit", "loss", "market", "price", "long", "short", "hold", "wait", "rise", "fall",
+]);
+export function isEnglishText(text: string): boolean {
+  if (/[\p{Script=Arabic}]/u.test(text)) return false;
+  const normalized = text.trim();
+  if (!normalized || !/[a-z]/i.test(normalized)) return false;
+  if (normalized.length < 10) {
+    return (normalized.toLowerCase().match(/[a-z]+/g) ?? []).some((word) => shortEnglishWords.has(word));
+  }
+  return franc(normalized, { minLength: 10 }) === "eng";
+}
 export type TranslationTestRecord = {
   provider: TranslationProvider;
   model: string;
@@ -313,6 +327,7 @@ export async function translate(
   translator: typeof translateWithProvider = translateWithProvider,
 ): Promise<{ text: string; status: string; warning?: string }> {
   if (!source.translate || !text) return { text, status: "not_requested" };
+  if (!isEnglishText(text)) return { text, status: "not_english" };
   const config = await settings();
   const provider = config.translationProvider as TranslationProvider;
   const model = config.translationModel.trim();
