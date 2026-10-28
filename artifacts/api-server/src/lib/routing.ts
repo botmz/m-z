@@ -1,4 +1,7 @@
 import { pool } from "./store";
+import { normalizeRouteContentSettings, type RouteContentSettings } from "./route-content";
+
+type SourceRouteSettings = { destinationId: number; contentSettings: RouteContentSettings };
 
 function routingError(message: string, status: number): Error & { status: number } {
   return Object.assign(new Error(message), { status });
@@ -8,6 +11,7 @@ export async function replaceSourceRouting(
   sourceId: number,
   destinationIds: number[],
   hideSourceLinkDestinationIds?: number[],
+  routeSettings?: SourceRouteSettings[],
 ): Promise<void> {
   if (!Number.isInteger(sourceId) || sourceId <= 0) {
     throw routingError("معرّف المصدر غير صالح", 400);
@@ -25,16 +29,27 @@ export async function replaceSourceRouting(
   ) {
     throw routingError("قائمة الوجهات المختارة لإخفاء رابط المصدر غير صالحة", 400);
   }
+  if (
+    (routeSettings ?? []).some((route) =>
+      !Number.isInteger(route.destinationId) || route.destinationId >= 0 ||
+      route.destinationId < -2147483648 || !destinationIds.includes(route.destinationId),
+    ) ||
+    new Set((routeSettings ?? []).map((route) => route.destinationId)).size !== (routeSettings ?? []).length
+  ) {
+    throw routingError("إعدادات محتوى المسار غير صالحة أو لا تطابق الوجهات المختارة", 400);
+  }
 
   const destinationDbIds = destinationIds.map(Math.abs);
+  const requestedSettings = new Map((routeSettings ?? []).map((route) => [route.destinationId, route.contentSettings]));
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
     // Coordinate with full routing saves while limiting this update to one source.
     await client.query("SELECT pg_advisory_xact_lock(128006,2)");
 
-    const source = await client.query("SELECT id FROM source_channels WHERE id=$1 FOR UPDATE", [sourceId]);
+    const source = await client.query("SELECT id,config FROM source_channels WHERE id=$1 FOR UPDATE", [sourceId]);
     if (!source.rows.length) throw routingError("قناة المصدر المحددة غير موجودة", 404);
+    const defaultShowLinks = !Boolean(source.rows[0].config?.skipMessagesWithLinks);
 
     if (destinationDbIds.length) {
       const destinations = await client.query(
@@ -47,20 +62,28 @@ export async function replaceSourceRouting(
     }
 
     const previous = await client.query(
-      "SELECT destination_id,hide_source_link FROM routing_rules WHERE source_id=$1",
+      "SELECT destination_id,hide_source_link,content_settings FROM routing_rules WHERE source_id=$1",
       [sourceId],
     );
     const previousHidden = new Set<number>(
       previous.rows.filter((row) => row.hide_source_link).map((row) => -row.destination_id),
+    );
+    const previousSettings = new Map<number, unknown>(
+      previous.rows.map((row) => [-row.destination_id, row.content_settings]),
     );
     const hiddenDestinations = hideSourceLinkDestinationIds === undefined
       ? previousHidden
       : new Set(hideSourceLinkDestinationIds);
     await client.query("DELETE FROM routing_rules WHERE source_id=$1", [sourceId]);
     for (const destinationId of destinationDbIds) {
+      const apiDestinationId = -destinationId;
+      const contentSettings = normalizeRouteContentSettings(
+        requestedSettings.get(apiDestinationId) ?? previousSettings.get(apiDestinationId),
+        defaultShowLinks,
+      );
       await client.query(
-        "INSERT INTO routing_rules(source_id,destination_id,hide_source_link) VALUES($1,$2,$3)",
-        [sourceId, destinationId, hiddenDestinations.has(-destinationId)],
+        "INSERT INTO routing_rules(source_id,destination_id,hide_source_link,content_settings) VALUES($1,$2,$3,$4)",
+        [sourceId, destinationId, hiddenDestinations.has(apiDestinationId), contentSettings],
       );
     }
     await client.query("COMMIT");

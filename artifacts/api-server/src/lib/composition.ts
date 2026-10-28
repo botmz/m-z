@@ -2,6 +2,7 @@ import { needsTranslation, translate } from "./translation";
 import { marketQuotes } from "./market";
 import { settings, type Channel } from "./store";
 import { removeSourceReferences, removeTextLinks, type TelegramTextEntity } from "./source-reference";
+import { normalizeRouteContentSettings, type RouteContentSettings } from "./route-content";
 
 export const escapeHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 export function sourceLink(username: string, messageId?: number) {
@@ -55,13 +56,16 @@ export async function compose(
   entities: TelegramTextEntity[] = [],
   hideSourceLink = false,
   translator: typeof translate = translate,
+  routeSettings?: Partial<RouteContentSettings>,
+  marketQuotesProvider: typeof marketQuotes = marketQuotes,
 ) {
+  const content = normalizeRouteContentSettings(routeSettings, !source.skipMessagesWithLinks);
   const sourceCleanedBody = hideSourceLink
-    ? removeSourceReferences(text, entities, source.username, source.name)
-    : { text, entities };
-  const cleanedBody = source.skipMessagesWithLinks
-    ? removeTextLinks(sourceCleanedBody.text, sourceCleanedBody.entities)
-    : sourceCleanedBody;
+    ? content.showText ? removeSourceReferences(text, entities, source.username, source.name) : { text: "", entities: [] }
+    : content.showText ? { text, entities } : { text: "", entities: [] };
+  const cleanedBody = content.showLinks
+    ? sourceCleanedBody
+    : removeTextLinks(sourceCleanedBody.text, sourceCleanedBody.entities);
   const translated = cleanedBody.text.trim()
     ? source.translate && needsTranslation(cleanedBody.text, source.targetLanguage)
       ? await translator(cleanedBody.text, source)
@@ -71,9 +75,9 @@ export async function compose(
   if (translated.warning) warnings.push(translated.warning);
   const prefix: string[] = [];
   if (!source.enabled || !destination.enabled) warnings.push("القناة معطلة؛ المعاينة لا تعني السماح بالإرسال");
-  if (destination.marketEnabled) {
+  if (destination.marketEnabled && content.showMarketPrices) {
     const config = await settings();
-    const prices = await marketQuotes();
+    const prices = await marketQuotesProvider();
     const order = destination.marketOrder === "bitcoinFirst" ? ["BTC/USD", "XAU/USD"] : ["XAU/USD", "BTC/USD"];
     for (const symbol of order) {
       if ((symbol === "BTC/USD" && !destination.showBitcoin) || (symbol === "XAU/USD" && !destination.showGold)) continue;
@@ -84,12 +88,12 @@ export async function compose(
     }
   }
   const suffix: string[] = [];
-  if (destination.signatureEnabled && destination.suffix.trim()) {
+  if (destination.signatureEnabled && content.showSignature && destination.suffix.trim()) {
     suffix.push(destination.suffix.trim());
   }
   const channelUrl = sourceLink(source.username);
   const existingText = [...prefix, translated.text, ...suffix].join("\n").toLowerCase();
-  if (source.attachSource && !hideSourceLink && !source.skipMessagesWithLinks && !existingText.includes(channelUrl.toLowerCase())) {
+  if (content.showText && content.showLinks && source.attachSource && !hideSourceLink && !existingText.includes(channelUrl.toLowerCase())) {
     suffix.push(`المصدر: ${source.name}\n${sourceLink(source.username, messageId)}`);
   }
   const renderedText = [...prefix, translated.text, ...suffix].filter(Boolean).join("\n\n");

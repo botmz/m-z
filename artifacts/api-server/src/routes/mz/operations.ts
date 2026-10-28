@@ -10,6 +10,7 @@ import { readerState, readerStatus, beginQr, qrState, submitQrPassword } from ".
 import { control, getWorkerHealth } from "../../lib/worker";
 import { marketQuotes, refreshPrices } from "../../lib/market";
 import { compose } from "../../lib/composition";
+import { normalizeRouteContentSettings } from "../../lib/route-content";
 import { sendManualMessage } from "../../lib/telegram-manual-send";
 import {
   GEMINI_FREE_MODELS, testTranslationProvider, translationServiceState,
@@ -113,9 +114,10 @@ operationsRouter.post("/preview", async (req, res) => {
   if (source.kind !== "source" || destination.kind !== "destination") {
     res.status(400).json({ error: "اختر مصدراً ووجهة صالحين" }); return;
   }
-  const routes = await pool.query(`SELECT hide_source_link FROM routing_rules
+  const routes = await pool.query(`SELECT hide_source_link,content_settings FROM routing_rules
     WHERE source_id=$1 AND destination_id=$2`, [source.id, -destination.id]);
-  const preview = await compose(source, destination, input.text, undefined, [], Boolean(routes.rows[0]?.hide_source_link));
+  const routeContent = normalizeRouteContentSettings(routes.rows[0]?.content_settings, !source.skipMessagesWithLinks);
+  const preview = await compose(source, destination, input.text, undefined, [], Boolean(routes.rows[0]?.hide_source_link), undefined, routeContent);
   if (!routes.rows.length) preview.warnings.push("لا يوجد توجيه تلقائي محفوظ بين المصدر والوجهة؛ الإرسال اليدوي من هذه الصفحة يرسل هذه الرسالة فقط.");
   res.json(PreviewMessageResponse.parse(preview));
 });
@@ -138,10 +140,11 @@ operationsRouter.post("/preview/send", async (req, res): Promise<void> => {
     return;
   }
 
-  const route = await pool.query("SELECT hide_source_link FROM routing_rules WHERE source_id=$1 AND destination_id=$2", [source.id, -destination.id]);
-  const composed = await compose(source, destination, input.text, undefined, [], Boolean(route.rows[0]?.hide_source_link));
+  const route = await pool.query("SELECT hide_source_link,content_settings FROM routing_rules WHERE source_id=$1 AND destination_id=$2", [source.id, -destination.id]);
+  const routeContent = normalizeRouteContentSettings(route.rows[0]?.content_settings, !source.skipMessagesWithLinks);
+  const composed = await compose(source, destination, input.text, undefined, [], Boolean(route.rows[0]?.hide_source_link), undefined, routeContent);
   if (!composed.text.trim()) {
-    res.status(400).json({ error: "لا توجد رسالة نصية قابلة للإرسال" });
+    res.status(400).json({ error: "لا يوجد محتوى مفعّل لهذا المسار؛ فعّل النص أو الأسعار أو التوقيع قبل الإرسال." });
     return;
   }
   try {

@@ -422,11 +422,12 @@ components:
         send: { type: boolean, description: Explicit confirmation to send a test message }
     RoutingRule:
       type: object
-      required: [sourceId, destinationId, hideSourceLink]
+      required: [sourceId, destinationId, hideSourceLink, contentSettings]
       properties:
         sourceId: { type: integer }
         destinationId: { type: integer }
         hideSourceLink: { type: boolean }
+        contentSettings: { $ref: '#/components/schemas/RouteContentSettings' }
     RoutingRuleInput:
       type: object
       required: [sourceId, destinationId]
@@ -434,6 +435,24 @@ components:
         sourceId: { type: integer }
         destinationId: { type: integer }
         hideSourceLink: { type: boolean }
+        contentSettings: { $ref: '#/components/schemas/RouteContentSettings' }
+    RouteContentSettings:
+      type: object
+      required: [showText, showImages, showVideos, showFiles, showLinks, showMarketPrices, showSignature]
+      properties:
+        showText: { type: boolean }
+        showImages: { type: boolean }
+        showVideos: { type: boolean }
+        showFiles: { type: boolean }
+        showLinks: { type: boolean }
+        showMarketPrices: { type: boolean }
+        showSignature: { type: boolean }
+    RouteSettingsInput:
+      type: object
+      required: [destinationId, contentSettings]
+      properties:
+        destinationId: { type: integer }
+        contentSettings: { $ref: '#/components/schemas/RouteContentSettings' }
     RoutingInput:
       type: object
       required: [rules]
@@ -453,6 +472,9 @@ components:
           type: array
           uniqueItems: true
           items: { type: integer, minimum: -2147483648, maximum: -1 }
+        routeSettings:
+          type: array
+          items: { $ref: '#/components/schemas/RouteSettingsInput' }
     MessageRecord:
       type: object
       required: [id, text, sourceName, destinationName, status, attempts, translationStatus, createdAt]

@@ -146,16 +146,33 @@ export interface TestInput {
   send: boolean;
 }
 
+export interface RouteContentSettings {
+  showText: boolean;
+  showImages: boolean;
+  showVideos: boolean;
+  showFiles: boolean;
+  showLinks: boolean;
+  showMarketPrices: boolean;
+  showSignature: boolean;
+}
+
 export interface RoutingRule {
   sourceId: number;
   destinationId: number;
   hideSourceLink: boolean;
+  contentSettings: RouteContentSettings;
 }
 
 export interface RoutingRuleInput {
   sourceId: number;
   destinationId: number;
   hideSourceLink?: boolean;
+  contentSettings?: RouteContentSettings;
+}
+
+export interface RouteSettingsInput {
+  destinationId: number;
+  contentSettings: RouteContentSettings;
 }
 
 export interface RoutingInput {
@@ -173,6 +190,7 @@ export interface SourceRoutingInput {
      * @items.maximum -1
      */
   hideSourceLinkDestinationIds?: number[];
+  routeSettings?: RouteSettingsInput[];
 }
 
 export interface MessageRecord {

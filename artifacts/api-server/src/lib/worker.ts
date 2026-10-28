@@ -1,11 +1,12 @@
 import { pool, getSetting, setSetting, settings, audit, safeError, channel, sameTelegramUsername, claimDelivery } from "./store";
-import { connectReader, readerConnected, readerState, catchUp, downloadSourceMedia } from "./telegram-reader";
+import { connectReader, readerConnected, readerState, catchUp, downloadSourceMedia, sourceMessageMediaKind } from "./telegram-reader";
 import { botApi, botState, testBot, TelegramApiError, AmbiguousSendError } from "./telegram-bot";
 import { compose, createSendPlan } from "./composition";
 import { translate } from "./translation";
 import { refreshPrices } from "./market";
 import { logger } from "./logger";
 import { resolveWorkerHealth, type WorkerHeartbeat } from "./worker-health";
+import { normalizeRouteContentSettings, routeContentSettingsKey, routeAllowsMedia } from "./route-content";
 import type { PoolClient } from "@workspace/db";
 
 let loopBusy = false;
@@ -15,7 +16,7 @@ let interval: ReturnType<typeof setInterval> | undefined;
 let lastReaderCheck = 0, lastCatchUp = 0, lastBotCheck = 0;
 let blockedUntil = 0;
 export const workerState = { status: "stopped", detail: "عامل المعالجة متوقف", checkedAt: null as string | null };
-type Part = { method: "sendMessage" | "sendPhoto" | "sendVideo" | "sendMedia"; text: string; html?: string; hideSourceLink?: boolean; removeLinks?: boolean; preserveConfiguredLinks?: boolean };
+type Part = { method: "sendMessage" | "sendPhoto" | "sendVideo" | "sendMedia"; text: string; html?: string; hideSourceLink?: boolean; removeLinks?: boolean; preserveConfiguredLinks?: boolean; contentSettingsHash?: string };
 
 export async function getWorkerHealth() {
   const [enabled, heartbeat] = await Promise.all([
@@ -45,7 +46,7 @@ export async function getWorkerHealth() {
 }
 
 async function processDelivery(id: number) {
-  const { rows } = await pool.query(`SELECT d.*,m.source_id,m.source_key,m.telegram_message_id,m.text,m.has_photo,m.entities
+  const { rows } = await pool.query(`SELECT d.*,m.source_id,m.source_key,m.telegram_message_id,m.text,m.has_photo,m.media_kind,m.entities
     FROM message_deliveries d JOIN messages m ON m.id=d.message_id WHERE d.id=$1`, [id]);
   const delivery = rows[0];
   if (!delivery || !delivery.source_id || !delivery.destination_id) {
@@ -58,13 +59,15 @@ async function processDelivery(id: number) {
     await pool.query("UPDATE message_deliveries SET status='held',error=$2,updated_at=now() WHERE id=$1", [id, "تغير معرف القناة بعد استقبال الرسالة؛ أُوقف الإرسال لحماية الوجهة"]);
     return;
   }
-  const route = await pool.query("SELECT hide_source_link FROM routing_rules WHERE source_id=$1 AND destination_id=$2", [delivery.source_id, delivery.destination_id]);
+  const route = await pool.query("SELECT hide_source_link,content_settings FROM routing_rules WHERE source_id=$1 AND destination_id=$2", [delivery.source_id, delivery.destination_id]);
   if (!source.enabled || !destination.enabled || !route.rows.length) {
     await pool.query("UPDATE message_deliveries SET status='held',error=$2,updated_at=now() WHERE id=$1", [id, "المصدر أو الوجهة معطل أو لم تعد قاعدة الربط موجودة"]);
     return;
   }
   const hideSourceLink = Boolean(route.rows[0].hide_source_link);
-  const removeLinks = Boolean(source.skipMessagesWithLinks);
+  const routeContent = normalizeRouteContentSettings(route.rows[0].content_settings, !source.skipMessagesWithLinks);
+  const contentSettingsHash = routeContentSettingsKey(routeContent);
+  const removeLinks = !routeContent.showLinks;
   const config = await settings();
   const sentIds: number[] = delivery.telegram_message_ids ?? [];
   let attemptedSend = false;
@@ -76,7 +79,8 @@ async function processDelivery(id: number) {
     if (plan?.length && (
       Boolean(plan[0]?.hideSourceLink) !== hideSourceLink ||
       Boolean(plan[0]?.removeLinks) !== removeLinks ||
-      (removeLinks && plan.some((part) => part.preserveConfiguredLinks !== true))
+      (removeLinks && plan.some((part) => part.preserveConfiguredLinks !== true)) ||
+      plan.some((part) => part.contentSettingsHash !== contentSettingsHash)
     )) {
       if (sentIds.length) {
         const reason = "تغير إعداد معالجة روابط المصدر بعد إرسال جزء من الرسالة؛ أُوقف الاستكمال لتجنب اختلاف المحتوى";
@@ -95,32 +99,40 @@ async function processDelivery(id: number) {
         delivery.entities,
         hideSourceLink,
         (text, sourceChannel) => translate(text, sourceChannel, delivery.message_id),
+        routeContent,
       );
-      const hasMedia = delivery.has_photo && source.mediaMode === "include";
+      let mediaKind = delivery.media_kind ?? "none";
+      if (delivery.has_photo && (!mediaKind || mediaKind === "none") &&
+        source.mediaMode === "include" && (routeContent.showImages || routeContent.showVideos || routeContent.showFiles)) {
+        mediaKind = await sourceMessageMediaKind(source, delivery.telegram_message_id) ?? "none";
+      }
+      const hasMedia = source.mediaMode === "include" && routeAllowsMedia(mediaKind, routeContent);
       const canHtml = destination.format === "html";
       plan = createSendPlan(composed.text, composed.html, hasMedia, canHtml);
       if (!composed.text.trim() && !hasMedia) {
         const reason = "تم تجاوز المنشور بعد إزالة الروابط أو إحالة المصدر لعدم بقاء محتوى قابل للإرسال";
         await pool.query("UPDATE message_deliveries SET status='skipped',error=$2,updated_at=now() WHERE id=$1", [id, reason]);
         await pool.query("INSERT INTO delivery_attempts(delivery_id,status,detail) VALUES($1,'skipped',$2)", [id, reason]);
+        await audit("warning", "delivery", `لا يوجد محتوى مفعّل للمسار من ${source.username} إلى ${destination.username}؛ تم تجاوز الرسالة دون إرسال نص فارغ`);
         return;
       }
-      plan = plan.map((part) => ({ ...part, hideSourceLink, removeLinks, preserveConfiguredLinks: true }));
+      plan = plan.map((part) => ({ ...part, hideSourceLink, removeLinks, preserveConfiguredLinks: true, contentSettingsHash }));
       await pool.query("UPDATE message_deliveries SET rendered_text=$2,translation_status=$3,send_plan=$4 WHERE id=$1", [id, composed.text, composed.translationStatus, JSON.stringify(plan)]);
     }
     if (!plan.length) throw new Error("لا توجد رسالة نصية أو صورة قابلة للنشر");
     for (let index = sentIds.length; index < plan.length; index++) {
       if (!await getSetting("worker_enabled", false)) throw Object.assign(new Error("تم إيقاف العامل مؤقتاً"), { held: true });
-      const current = await pool.query(`SELECT s.config->>'skipMessagesWithLinks' AS "removeLinks",
-          r.hide_source_link AS "hideSourceLink"
+      const current = await pool.query(`SELECT s.config->>'skipMessagesWithLinks' AS "sourceSkipsLinks",
+          r.hide_source_link AS "hideSourceLink",r.content_settings AS "contentSettings"
         FROM source_channels s JOIN routing_rules r ON r.source_id=s.id
         JOIN destination_channels d ON d.id=r.destination_id WHERE s.id=$1 AND d.id=$2 AND s.enabled AND d.enabled`, [source.id, delivery.destination_id]);
       if (!current.rows.length) throw Object.assign(new Error("تم تعطيل قناة أو حذف قاعدة الربط"), { held: true });
       if (Boolean(current.rows[0].hideSourceLink) !== Boolean(plan[0]?.hideSourceLink)) {
         throw Object.assign(new Error("تغير إعداد إخفاء رابط المصدر أثناء تجهيز الرسالة؛ أعد محاولتها"), { held: true });
       }
-      if ((current.rows[0].removeLinks === "true") !== Boolean(plan[0]?.removeLinks)) {
-        throw Object.assign(new Error("تغير إعداد إزالة الروابط أثناء تجهيز الرسالة؛ أعد محاولتها"), { held: true });
+      const currentContent = normalizeRouteContentSettings(current.rows[0].contentSettings, current.rows[0].sourceSkipsLinks !== "true");
+      if (routeContentSettingsKey(currentContent) !== contentSettingsHash) {
+        throw Object.assign(new Error("تغير محتوى المسار أثناء تجهيز الرسالة؛ أُوقف الإرسال وأعد المحاولة"), { held: true });
       }
       const part = plan[index]!;
       const media = ["sendMedia", "sendPhoto", "sendVideo"].includes(part.method)
@@ -132,12 +144,12 @@ async function processDelivery(id: number) {
       if (media) {
         const form = new FormData();
         form.set("chat_id", destination.username);
-        form.set(media.kind === "video" ? "video" : "photo", new Blob([new Uint8Array(media.buffer)], { type: media.mimeType }), media.filename);
+        form.set(media.kind === "video" ? "video" : media.kind === "file" ? "document" : "photo", new Blob([new Uint8Array(media.buffer)], { type: media.mimeType }), media.filename);
         if (part.text) {
           form.set("caption", part.html ?? part.text);
           if (part.html) form.set("parse_mode", "HTML");
         }
-        response = await botApi(media.kind === "video" ? "sendVideo" : "sendPhoto", form);
+        response = await botApi(media.kind === "video" ? "sendVideo" : media.kind === "file" ? "sendDocument" : "sendPhoto", form);
       } else {
         response = await botApi("sendMessage", { chat_id: destination.username, text: part.html ?? part.text,
           ...(part.html ? { parse_mode: "HTML" } : {}), link_preview_options: { is_disabled: true } });

@@ -5,13 +5,36 @@ import {
   getGetChannelsQueryKey, getGetRoutingQueryKey, useGetChannels, useGetRouting, useSaveChannelRouting,
 } from '@workspace/api-client-react';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { Empty, ErrorBox, PageHeader, Panel, RowsSkeleton } from '@/components/mz-ui';
 import { reportError, reportResult } from '@/lib/mz';
 import { cn } from '@/lib/utils';
 
 const key = (s: number, d: number) => `${s}:${d}`;
-const signature = (routes: Set<string>, hidden: Set<string>) =>
-  `${[...routes].sort().join('|')}#${[...hidden].sort().join('|')}`;
+type RouteContentSettings = {
+  showText: boolean;
+  showImages: boolean;
+  showVideos: boolean;
+  showFiles: boolean;
+  showLinks: boolean;
+  showMarketPrices: boolean;
+  showSignature: boolean;
+};
+const defaults = (showLinks = true): RouteContentSettings => ({
+  showText: true, showImages: true, showVideos: true, showFiles: true,
+  showLinks, showMarketPrices: true, showSignature: true,
+});
+const signature = (routes: Set<string>, hidden: Set<string>, content: Record<string, RouteContentSettings>) =>
+  `${[...routes].sort().join('|')}#${[...hidden].sort().join('|')}#${[...routes].sort().map((route) => `${route}:${JSON.stringify(content[route] ?? defaults())}`).join('|')}`;
+const contentOptions: Array<[keyof RouteContentSettings, string]> = [
+  ['showText', 'إظهار نص رسالة المصدر'],
+  ['showImages', 'إظهار الصور'],
+  ['showVideos', 'إظهار الفيديوهات'],
+  ['showFiles', 'إظهار الملفات'],
+  ['showLinks', 'إظهار الروابط'],
+  ['showMarketPrices', 'إظهار شريط الأسعار'],
+  ['showSignature', 'إظهار التوقيع الثابت'],
+];
 
 export default function RoutingPage() {
   const qc = useQueryClient();
@@ -20,8 +43,11 @@ export default function RoutingPage() {
   const save = useSaveChannelRouting();
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [hide, setHide] = useState<Set<string>>(new Set());
+  const [content, setContent] = useState<Record<string, RouteContentSettings>>({});
+  const [expandedRoute, setExpandedRoute] = useState<string | null>(null);
   const [baseSel, setBaseSel] = useState<Set<string>>(new Set());
   const [baseHide, setBaseHide] = useState<Set<string>>(new Set());
+  const [baseContent, setBaseContent] = useState<Record<string, RouteContentSettings>>({});
   const init = useRef(false);
 
   useEffect(() => {
@@ -29,23 +55,33 @@ export default function RoutingPage() {
       init.current = true;
       const s = new Set(rt.data.map((r) => key(r.sourceId, r.destinationId)));
       const h = new Set(rt.data.filter((r) => r.hideSourceLink).map((r) => key(r.sourceId, r.destinationId)));
+      const c = Object.fromEntries(rt.data.map((r) => [
+        key(r.sourceId, r.destinationId),
+        r.contentSettings ?? defaults(),
+      ]));
       setSel(s);
       setHide(h);
+      setContent(c);
       setBaseSel(new Set(s));
       setBaseHide(new Set(h));
+      setBaseContent(c);
     }
   }, [rt.data]);
 
   const sources = (ch.data ?? []).filter((c) => c.kind === 'source');
   const dests = (ch.data ?? []).filter((c) => c.kind === 'destination');
-  const dirty = signature(sel, hide) !== signature(baseSel, baseHide);
+  const dirty = signature(sel, hide, content) !== signature(baseSel, baseHide, baseContent);
 
-  const flip = (route: string) => {
+  const flip = (route: string, sourceSkipsLinks: boolean) => {
     const removing = sel.has(route);
     setSel((p) => {
       const n = new Set(p);
       removing ? n.delete(route) : n.add(route);
       return n;
+    });
+    if (!removing) setContent((current) => current[route] ? current : {
+      ...current,
+      [route]: defaults(!sourceSkipsLinks),
     });
     if (removing) setHide((current) => {
       const next = new Set(current);
@@ -53,6 +89,10 @@ export default function RoutingPage() {
       return next;
     });
   };
+  const updateContent = (route: string, field: keyof RouteContentSettings, value: boolean) => setContent((current) => ({
+    ...current,
+    [route]: { ...(current[route] ?? defaults()), [field]: value },
+  }));
   const toggleHide = (route: string) => setHide((p) => {
     const n = new Set(p);
     n.has(route) ? n.delete(route) : n.add(route);
@@ -65,12 +105,18 @@ export default function RoutingPage() {
   const reset = () => {
     setSel(new Set(baseSel));
     setHide(new Set(baseHide));
+    setContent(baseContent);
+    setExpandedRoute(null);
   };
   const submit = async () => {
     const changedSources = sources.filter((source) => {
       const prefix = `${source.id}:`;
       const routesFor = (set: Set<string>) => [...set].filter((route) => route.startsWith(prefix)).sort().join('|');
-      return routesFor(baseSel) !== routesFor(sel) || routesFor(baseHide) !== routesFor(hide);
+      const settingsFor = (set: Set<string>, values: Record<string, RouteContentSettings>) =>
+        [...set].filter((route) => route.startsWith(prefix)).sort().map((route) => `${route}:${JSON.stringify(values[route] ?? defaults(!source.skipMessagesWithLinks))}`).join('|');
+      return routesFor(baseSel) !== routesFor(sel) ||
+        routesFor(baseHide) !== routesFor(hide) ||
+        settingsFor(baseSel, baseContent) !== settingsFor(sel, content);
     });
 
     try {
@@ -81,7 +127,11 @@ export default function RoutingPage() {
         const hideSourceLinkDestinationIds = [...hide]
           .filter((route) => route.startsWith(`${source.id}:`))
           .map((route) => Number(route.split(':')[1]));
-        const result = await save.mutateAsync({ id: source.id, data: { destinationIds, hideSourceLinkDestinationIds } });
+        const routeSettings = destinationIds.map((destinationId) => {
+          const route = key(source.id, destinationId);
+          return { destinationId, contentSettings: content[route] ?? defaults(!source.skipMessagesWithLinks) };
+        });
+        const result = await save.mutateAsync({ id: source.id, data: { destinationIds, hideSourceLinkDestinationIds, routeSettings } });
         if (!result.ok) {
           reportResult(result);
           return;
@@ -89,6 +139,7 @@ export default function RoutingPage() {
       }
       setBaseSel(new Set(sel));
       setBaseHide(new Set(hide));
+      setBaseContent(content);
       await qc.invalidateQueries({ queryKey: getGetRoutingQueryKey() });
       reportResult({ ok: true, message: 'تم حفظ تغييرات المصادر المحددة فقط' });
     } catch (e) {
@@ -159,17 +210,55 @@ export default function RoutingPage() {
                           {d.name}
                         </button>
                         {on && (
-                          <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-border px-2 py-1.5 text-xs text-muted-foreground">
-                            <input
-                              type="checkbox"
-                              checked={hide.has(route)}
-                              onChange={() => toggleHide(route)}
-                              aria-label={`إخفاء رابط المصدر من ${d.name}`}
-                              data-testid={`toggle-hide-source-${s.id}-${d.id}`}
-                              className="accent-gold"
-                            />
-                            <span>إخفاء رابط المصدر</span>
-                          </label>
+                          <>
+                            <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-border px-2 py-1.5 text-xs text-muted-foreground">
+                              <input
+                                type="checkbox"
+                                checked={hide.has(route)}
+                                onChange={() => toggleHide(route)}
+                                aria-label={`إخفاء رابط المصدر من ${d.name}`}
+                                data-testid={`toggle-hide-source-${s.id}-${d.id}`}
+                                className="accent-gold"
+                              />
+                              <span>إخفاء رابط المصدر</span>
+                            </label>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              aria-expanded={expandedRoute === route}
+                              onClick={() => setExpandedRoute((current) => current === route ? null : route)}
+                              data-testid={`toggle-route-content-${s.id}-${d.id}`}
+                            >
+                              محتوى المصدر
+                            </Button>
+                            {expandedRoute === route && (
+                              <div className="basis-full rounded-md border border-border bg-muted/10 p-3">
+                                <div className="mb-2 text-sm font-semibold">محتوى رسالة المصدر</div>
+                                <div className="grid gap-2 sm:grid-cols-2">
+                                  {contentOptions.map(([field, label]) => (
+                                    <label key={field} className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2 text-sm">
+                                      <span>{label}</span>
+                                      <Switch
+                                        checked={(content[route] ?? defaults(!s.skipMessagesWithLinks))[field]}
+                                        onCheckedChange={(value) => updateContent(route, field, value)}
+                                        data-testid={`switch-route-content-${field}-${s.id}-${d.id}`}
+                                      />
+                                    </label>
+                                  ))}
+                                </div>
+                                {(() => {
+                                  const value = content[route] ?? defaults(!s.skipMessagesWithLinks);
+                                  const empty = !value.showText && !value.showImages && !value.showVideos && !value.showFiles && !value.showMarketPrices && !value.showSignature;
+                                  return empty ? (
+                                    <p className="mt-2 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-warn" role="alert" data-testid={`warning-empty-route-${s.id}-${d.id}`}>
+                                      لا يوجد محتوى مفعّل؛ ستُتخطى الرسائل بدلاً من إرسال رسالة فارغة.
+                                    </p>
+                                  ) : null;
+                                })()}
+                              </div>
+                            )}
+                          </>
                         )}
                       </div>
                     );

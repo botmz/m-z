@@ -333,7 +333,19 @@ export const saveChannelRoutingBodyHideSourceLinkDestinationIdsItemMax = -1;
 
 export const SaveChannelRoutingBody = zod.object({
   "destinationIds": zod.array(zod.number().int().min(saveChannelRoutingBodyDestinationIdsItemMin).max(saveChannelRoutingBodyDestinationIdsItemMax)),
-  "hideSourceLinkDestinationIds": zod.array(zod.number().int().min(saveChannelRoutingBodyHideSourceLinkDestinationIdsItemMin).max(saveChannelRoutingBodyHideSourceLinkDestinationIdsItemMax)).optional()
+  "hideSourceLinkDestinationIds": zod.array(zod.number().int().min(saveChannelRoutingBodyHideSourceLinkDestinationIdsItemMin).max(saveChannelRoutingBodyHideSourceLinkDestinationIdsItemMax)).optional(),
+  "routeSettings": zod.array(zod.object({
+  "destinationId": zod.number().int(),
+  "contentSettings": zod.object({
+  "showText": zod.boolean(),
+  "showImages": zod.boolean(),
+  "showVideos": zod.boolean(),
+  "showFiles": zod.boolean(),
+  "showLinks": zod.boolean(),
+  "showMarketPrices": zod.boolean(),
+  "showSignature": zod.boolean()
+})
+})).optional()
 })
 
 export const SaveChannelRoutingResponse = zod.object({
@@ -345,7 +357,16 @@ export const SaveChannelRoutingResponse = zod.object({
 export const GetRoutingResponseItem = zod.object({
   "sourceId": zod.number().int(),
   "destinationId": zod.number().int(),
-  "hideSourceLink": zod.boolean()
+  "hideSourceLink": zod.boolean(),
+  "contentSettings": zod.object({
+  "showText": zod.boolean(),
+  "showImages": zod.boolean(),
+  "showVideos": zod.boolean(),
+  "showFiles": zod.boolean(),
+  "showLinks": zod.boolean(),
+  "showMarketPrices": zod.boolean(),
+  "showSignature": zod.boolean()
+})
 })
 export const GetRoutingResponse = zod.array(GetRoutingResponseItem)
 
@@ -354,7 +375,16 @@ export const SaveRoutingBody = zod.object({
   "rules": zod.array(zod.object({
   "sourceId": zod.number().int(),
   "destinationId": zod.number().int(),
-  "hideSourceLink": zod.boolean().optional()
+  "hideSourceLink": zod.boolean().optional(),
+  "contentSettings": zod.object({
+  "showText": zod.boolean(),
+  "showImages": zod.boolean(),
+  "showVideos": zod.boolean(),
+  "showFiles": zod.boolean(),
+  "showLinks": zod.boolean(),
+  "showMarketPrices": zod.boolean(),
+  "showSignature": zod.boolean()
+}).optional()
 }))
 })
 

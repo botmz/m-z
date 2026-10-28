@@ -6,6 +6,7 @@ import {
 } from "@workspace/api-zod";
 import { pool, channels, channel, channelRow, normalizeUsername, audit } from "../../lib/store";
 import { replaceSourceRouting } from "../../lib/routing";
+import { normalizeRouteContentSettings } from "../../lib/route-content";
 import { testSource } from "../../lib/telegram-reader";
 import { testDestination } from "../../lib/telegram-bot";
 
@@ -57,15 +58,22 @@ channelRouter.post("/channels/:id/test", async (req, res) => {
 channelRouter.put("/channels/:id/routing", async (req, res) => {
   const { id } = UpdateChannelParams.parse(req.params);
   if (id <= 0) { res.status(400).json({ error: "معرّف المصدر غير صالح" }); return; }
-  const { destinationIds, hideSourceLinkDestinationIds } = SaveChannelRoutingBody.parse(req.body);
-  await replaceSourceRouting(id, destinationIds, hideSourceLinkDestinationIds);
+  const { destinationIds, hideSourceLinkDestinationIds, routeSettings } = SaveChannelRoutingBody.parse(req.body);
+  await replaceSourceRouting(id, destinationIds, hideSourceLinkDestinationIds, routeSettings);
   await audit("info", "routing", `تم تحديث وجهات مصدر ${id} يدوياً (${destinationIds.length} وجهة)`);
   res.json({ ok: true, message: "تم حفظ وجهات المصدر المحددة" });
 });
 channelRouter.get("/routing", async (_req, res) => {
-  const { rows } = await pool.query(`SELECT source_id AS "sourceId",-destination_id AS "destinationId",
-    hide_source_link AS "hideSourceLink" FROM routing_rules ORDER BY id`);
-  res.json(GetRoutingResponse.parse(rows));
+  const { rows } = await pool.query(`SELECT r.source_id AS "sourceId",-r.destination_id AS "destinationId",
+    r.hide_source_link AS "hideSourceLink",r.content_settings AS "savedContentSettings",
+    COALESCE((s.config->>'skipMessagesWithLinks')::boolean,false) AS "sourceSkipsLinks"
+    FROM routing_rules r JOIN source_channels s ON s.id=r.source_id ORDER BY r.id`);
+  res.json(GetRoutingResponse.parse(rows.map((row) => ({
+    sourceId: row.sourceId,
+    destinationId: row.destinationId,
+    hideSourceLink: row.hideSourceLink,
+    contentSettings: normalizeRouteContentSettings(row.savedContentSettings, !row.sourceSkipsLinks),
+  }))));
 });
 channelRouter.put("/routing", async (req, res) => {
   const { rules } = SaveRoutingBody.parse(req.body);
@@ -81,21 +89,29 @@ channelRouter.put("/routing", async (req, res) => {
     await client.query("BEGIN");
     // Serializes full routing replacements while keeping the previous configuration if any validation fails.
     await client.query("SELECT pg_advisory_xact_lock(128006,2)");
-    const existing = await client.query("SELECT source_id,destination_id,hide_source_link FROM routing_rules");
-    const existingHidden = new Map(existing.rows.map((row) => [`${row.source_id}:${-row.destination_id}`, Boolean(row.hide_source_link)]));
+    const existing = await client.query("SELECT source_id,destination_id,hide_source_link,content_settings FROM routing_rules");
+    const existingByRoute = new Map(existing.rows.map((row) => [`${row.source_id}:${-row.destination_id}`, row]));
+    const preparedRules: Array<{ sourceId: number; destinationId: number; hideSourceLink: boolean; contentSettings: ReturnType<typeof normalizeRouteContentSettings> }> = [];
     for (const rule of rules) {
-      const sources = await client.query("SELECT id FROM source_channels WHERE id=$1", [rule.sourceId]);
+      const sources = await client.query("SELECT id,config FROM source_channels WHERE id=$1", [rule.sourceId]);
       const dests = await client.query("SELECT id FROM destination_channels WHERE id=$1", [-rule.destinationId]);
       if (!sources.rows.length || !dests.rows.length) throw Object.assign(new Error("القناة المحددة لم تعد موجودة"), { status: 400 });
+      const previous = existingByRoute.get(`${rule.sourceId}:${rule.destinationId}`);
+      const hideSourceLink = rule.hideSourceLink ?? Boolean(previous?.hide_source_link);
+      const contentSettings = normalizeRouteContentSettings(
+        rule.contentSettings ?? previous?.content_settings,
+        !Boolean(sources.rows[0].config?.skipMessagesWithLinks),
+      );
+      preparedRules.push({ sourceId: rule.sourceId, destinationId: rule.destinationId, hideSourceLink, contentSettings });
     }
     await client.query("DELETE FROM routing_rules");
-    for (const rule of rules) {
-      const hideSourceLink = rule.hideSourceLink ?? existingHidden.get(`${rule.sourceId}:${rule.destinationId}`) ?? false;
+    for (const rule of preparedRules) {
       await client.query(
-        "INSERT INTO routing_rules(source_id,destination_id,hide_source_link) VALUES($1,$2,$3)",
-        [rule.sourceId, -rule.destinationId, hideSourceLink],
+        "INSERT INTO routing_rules(source_id,destination_id,hide_source_link,content_settings) VALUES($1,$2,$3,$4)",
+        [rule.sourceId, -rule.destinationId, rule.hideSourceLink, rule.contentSettings],
       );
     }
+    await client.query("DELETE FROM routing_rules");
     await client.query("COMMIT");
   } catch (e) { await client.query("ROLLBACK"); throw e; } finally { client.release(); }
   await audit("info", "routing", `تم حفظ ${rules.length} من قواعد الربط`);

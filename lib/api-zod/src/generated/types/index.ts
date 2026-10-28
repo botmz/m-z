@@ -32,6 +32,8 @@ export * from './passwordInput';
 export * from './previewInput';
 export * from './previewResult';
 export * from './qrState';
+export * from './routeContentSettings';
+export * from './routeSettingsInput';
 export * from './routingInput';
 export * from './routingRule';
 export * from './routingRuleInput';

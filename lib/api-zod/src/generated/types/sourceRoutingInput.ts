@@ -4,6 +4,7 @@
  * Api
  * OpenAPI spec version: 1.0.0
  */
+import type { RouteSettingsInput } from './routeSettingsInput';
 
 export interface SourceRoutingInput {
   /**
@@ -16,4 +17,5 @@ export interface SourceRoutingInput {
      * @items.maximum -1
      */
   hideSourceLinkDestinationIds?: number[];
+  routeSettings?: RouteSettingsInput[];
 }

@@ -8,6 +8,7 @@ export const messages = pgTable("messages", {
   telegramMessageId: integer("telegram_message_id").notNull(),
   text: text("text").notNull(),
   hasPhoto: boolean("has_photo").notNull().default(false),
+  mediaKind: text("media_kind").notNull().default("none"),
   entities: jsonb("entities").notNull().default([]),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [uniqueIndex("messages_dedup").on(t.sourceKey, t.telegramMessageId)]);

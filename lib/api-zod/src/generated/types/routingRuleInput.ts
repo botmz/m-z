@@ -4,9 +4,11 @@
  * Api
  * OpenAPI spec version: 1.0.0
  */
+import type { RouteContentSettings } from './routeContentSettings';
 
 export interface RoutingRuleInput {
   sourceId: number;
   destinationId: number;
   hideSourceLink?: boolean;
+  contentSettings?: RouteContentSettings;
 }
