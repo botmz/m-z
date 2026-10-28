@@ -231,6 +231,7 @@ export async function requestOpenAITranslation(
 export function protectTokens(text: string) {
   const tokens: string[] = [];
   const masked = text.replace(/https?:\/\/[^\s<>]+|@[A-Za-z0-9_]+|\b[A-Z][A-Z0-9/_.-]{1,15}\b|[-+]?\p{N}+(?:[.,:/٫٬-]\p{N}+)*(?:[%٪]|[$€£])?/gu, token => {
+    if (shortEnglishWords.has(token.toLowerCase())) return token;
     const index = tokens.push(token) - 1;
     return `⟦MZ${index}⟧`;
   });
@@ -262,9 +263,19 @@ const targetScriptByLanguage: Record<string, RegExp> = {
   ko: /\p{Script=Hangul}/gu,
   th: /\p{Script=Thai}/gu,
 };
+const targetLanguageAliases: Record<string, string> = {
+  arabic: "ar", persian: "fa", farsi: "fa", urdu: "ur", hebrew: "he",
+  russian: "ru", ukrainian: "uk", bulgarian: "bg", greek: "el", hindi: "hi",
+  chinese: "zh", japanese: "ja", korean: "ko", thai: "th",
+};
+
+function languageKey(targetLanguage: string) {
+  const base = targetLanguage.toLowerCase().split(/[-_]/u)[0] ?? "";
+  return targetLanguageAliases[base] ?? base;
+}
 
 export function needsTranslation(text: string, targetLanguage: string): boolean {
-  const language = targetLanguage.toLowerCase().split(/[-_]/u)[0] ?? "";
+  const language = languageKey(targetLanguage);
   const targetScript = targetScriptByLanguage[language];
   const letters = text.match(/\p{L}/gu) ?? [];
   if (!letters.length) return false;
@@ -305,7 +316,7 @@ export function validateTranslation(sourceText: string, translatedText: string, 
     throw new TranslationQualityError("أعاد مزود الترجمة نصاً فارغاً؛ عُلقت الرسالة.");
   }
 
-  const language = targetLanguage.toLowerCase().split(/[-_]/u)[0] ?? "";
+  const language = languageKey(targetLanguage);
   const targetScript = targetScriptByLanguage[language];
   if (targetScript) {
     const letters = translatedText
@@ -406,12 +417,9 @@ export async function testTranslationProvider(provider: TranslationProvider, mod
   return result;
 }
 
-async function handleTranslationFailure(source: Channel, text: string, reason: string, qualityFailure = false) {
+async function handleTranslationFailure(text: string, reason: string): Promise<never> {
   await audit("warning", "translation", `فشلت الترجمة؛ السبب: ${reason}`);
-  if (!qualityFailure && source.translationFailure === "original") {
-    return { text, status: "fallback_original", warning: `تعذرت الترجمة؛ تم استخدام النص الأصلي. ${reason}` };
-  }
-  throw Object.assign(new Error(`فشلت الترجمة؛ عُلقت الرسالة وفق إعداد المصدر. ${reason}`), { translationHeld: true });
+  throw Object.assign(new Error(`عُلقت الرسالة حتى لا يُرسل نص غير مترجم. ${reason}`), { translationHeld: true });
 }
 
 export async function translate(
@@ -421,7 +429,7 @@ export async function translate(
   translator: typeof translateWithProvider = translateWithProvider,
 ): Promise<{ text: string; status: string; warning?: string }> {
   if (!source.translate || !text) return { text, status: "not_requested" };
-  if (!isEnglishText(text)) return { text, status: "not_english" };
+  if (!needsTranslation(text, source.targetLanguage)) return { text, status: "not_required" };
   const config = await settings();
   const provider = config.translationProvider as TranslationProvider;
   const model = config.translationModel.trim();
@@ -440,19 +448,19 @@ export async function translate(
         await pool.query(`UPDATE message_translations SET status='rejected',translated_text=NULL,error=$2,created_at=now()
           WHERE message_id=$1 AND provider=$3 AND model=$4 AND target_language=$5 AND input_hash=$6`,
         [messageId, reason, provider, model, source.targetLanguage, inputHash]);
-        return handleTranslationFailure(source, text, reason, true);
+        return handleTranslationFailure(text, reason);
       }
     }
     if (row?.status === "rejected" && Date.now() - new Date(row.created_at).getTime() < 10 * 60 * 1000) {
-      return handleTranslationFailure(source, text, row.error || "رفض فحص جودة الترجمة النص الناتج؛ عُلقت الرسالة.", true);
+      return handleTranslationFailure(text, row.error || "رفض فحص جودة الترجمة النص الناتج.");
     }
     if (row?.status === "failed" && Date.now() - new Date(row.created_at).getTime() < 10 * 60 * 1000) {
-      return handleTranslationFailure(source, text, row.error || "فشلت الترجمة لهذا المنشور؛ لم تُكرر المحاولة تلقائياً.");
+      return handleTranslationFailure(text, row.error || "فشلت الترجمة لهذا المنشور؛ لم تُكرر المحاولة تلقائياً.");
     }
   }
   const verification = await getSetting<TranslationTestRecord | null>("translation_test", null);
   if (!verification?.ok || verification.provider !== provider || verification.model !== model) {
-    return handleTranslationFailure(source, text, "اختبر مزود الترجمة والنموذج المحددين بنجاح من صفحة الترجمة قبل استخدامهما.");
+    return handleTranslationFailure(text, "اختبر مزود الترجمة والنموذج المحددين بنجاح من صفحة الترجمة قبل استخدامهما.");
   }
   try {
     const translated = await translator(provider, model, text, source.targetLanguage);
@@ -469,9 +477,6 @@ export async function translate(
   } catch (error) {
     const reason = safeError(transportError(error));
     const qualityFailure = error instanceof TranslationQualityError;
-    if (!qualityFailure) {
-      await setSetting("translation_test", { provider, model, ok: false, message: reason, checkedAt: new Date().toISOString() });
-    }
     if (messageId) {
       await pool.query(`INSERT INTO message_translations
         (message_id,provider,model,target_language,input_hash,status,translated_text,error)
@@ -480,6 +485,6 @@ export async function translate(
         DO UPDATE SET status=EXCLUDED.status,translated_text=NULL,error=EXCLUDED.error,created_at=now()`,
       [messageId, provider, model, source.targetLanguage, inputHash, qualityFailure ? "rejected" : "failed", reason]);
     }
-    return handleTranslationFailure(source, text, reason, qualityFailure);
+    return handleTranslationFailure(text, reason);
   }
 }

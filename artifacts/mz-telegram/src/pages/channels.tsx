@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Empty, ErrorBox, Field, PageHeader, Panel, RowsSkeleton, Sel, StatusBadge } from '@/components/mz-ui';
 import {
-  channelToInput, defaultChannel, failureLabels, filterLabels, formatLabels, mediaLabels, orderLabels,
+  channelToInput, defaultChannel, filterLabels, formatLabels, mediaLabels, orderLabels,
   reportError, reportResult, staleLabels,
 } from '@/lib/mz';
 import { useFmt } from '@/lib/use-fmt';
@@ -75,7 +75,13 @@ function ChannelForm({
   };
   const submit = async () => {
     setRouteSaveError('');
-    const body = { ...f, name: f.name.trim(), username: f.username.trim(), targetLanguage: f.translate ? f.targetLanguage || 'ar' : f.targetLanguage || 'ar' };
+    const body = {
+      ...f,
+      name: f.name.trim(),
+      username: f.username.trim(),
+      targetLanguage: f.translate ? f.targetLanguage || 'ar' : f.targetLanguage || 'ar',
+      translationFailure: f.translate ? 'hold' as const : f.translationFailure,
+    };
     const existing = editing ?? createdChannel;
     let channelSaved = false;
     try {
@@ -181,7 +187,9 @@ function ChannelForm({
                 <p className="mt-1 text-xs text-muted-foreground">عند التفعيل تُحذف الروابط الظاهرة فقط، وتبقى الكلمات المرتبطة برابط مخفي. تُرسل بقية الرسالة أو الوسيط ولا تُتجاهل الرسالة بسبب الرابط.</p>
               </div>
               {f.translate && (
-                <Field label="عند فشل الترجمة"><Sel value={f.translationFailure} onChange={(e) => set('translationFailure', e.target.value as ChannelInput['translationFailure'])} options={opts(failureLabels)} data-testid="select-failure" /></Field>
+                <Field label="عند فشل الترجمة" hint="تُعلّق الرسالة حتى لا يصل النص الأصلي إلى الوجهة.">
+                  <Sel value="hold" disabled options={opts({ hold: 'تعليق الرسالة' })} data-testid="select-failure" />
+                </Field>
               )}
               <Field label="نوع الرسائل"><Sel value={f.filter} onChange={(e) => set('filter', e.target.value as ChannelInput['filter'])} options={opts(filterLabels)} data-testid="select-filter" /></Field>
               <Field label="الوسائط"><Sel value={f.mediaMode} onChange={(e) => set('mediaMode', e.target.value as ChannelInput['mediaMode'])} options={opts(mediaLabels)} data-testid="select-media" /></Field>

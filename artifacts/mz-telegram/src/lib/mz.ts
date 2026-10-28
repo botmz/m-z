@@ -33,7 +33,7 @@ export const defaultChannel = (kind: 'source' | 'destination'): ChannelInput => 
   suffix: '',
   filter: 'all',
   mediaMode: 'include',
-  translationFailure: 'original',
+  translationFailure: 'hold',
   marketEnabled: false,
   showGold: true,
   showBitcoin: true,

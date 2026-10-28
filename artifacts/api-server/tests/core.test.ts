@@ -2,7 +2,7 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import {
   GEMINI_FREE_MODEL, GEMINI_FREE_MODELS, geminiHttpError, protectTokens, requestGeminiTranslation,
-  requestOpenAITranslation, restoreTokens, translationServiceState, translate, isEnglishText, validateTranslation,
+  requestOpenAITranslation, restoreTokens, translationServiceState, translate, isEnglishText, validateTranslation, needsTranslation,
 } from "../src/lib/translation";
 import { acceptsMessage, containsLink, sourceLink, splitText, originalHtml, escapeHtml, marketPriceLine, compose, createSendPlan } from "../src/lib/composition";
 import { removeSourceReferences, removeTextLinks } from "../src/lib/source-reference";
@@ -27,6 +27,12 @@ test("financial numbers, assets, links and identifiers are restored unchanged", 
   assert(!masked.includes("108,500.00"));
   assert(!masked.includes("https://example.org"));
 });
+test("common uppercase trading words stay translatable while tickers remain protected", () => {
+  const { masked, tokens } = protectTokens("BUY BTC/USD");
+  assert(masked.startsWith("BUY "));
+  assert(!masked.includes("BTC/USD"));
+  assert.equal(restoreTokens(masked, tokens), "BUY BTC/USD");
+});
 test("rejects translation that removes an immutable token", () => {
   const { masked, tokens } = protectTokens("BTC 4250");
   assert.throws(() => restoreTokens(masked.replace("⟦MZ0⟧", ""), tokens));
@@ -38,7 +44,7 @@ test("rejects translation that duplicates an immutable token", () => {
 test("translation quality check accepts Arabic output and rejects unchanged or wrong-language text", () => {
   validateTranslation("Gold price rose 2.5 percent.", "ارتفع سعر الذهب 2.5 بالمئة.", "ar");
   assert.throws(
-    () => validateTranslation("Gold prices rose today.", "Gold prices rose today.", "ar"),
+    () => validateTranslation("Gold prices rose today.", "Gold prices rose today.", "en"),
     /لم يؤكد الفحص/,
   );
   assert.throws(
@@ -197,12 +203,15 @@ test("link cleanup removes visible URLs, keeps hidden-link words, and preserves 
   assert(!acceptsMessage(source, "", false), "an empty text-only post has no sendable content");
   assert(acceptsMessage({ ...source, filter: "recommendations" }, "", true), "an empty link-stripped caption must not suppress attached media");
 });
-test("language detection translates English only and leaves Arabic and Spanish unchanged", async () => {
+test("translation detects target-language text, translates other languages, and ignores ticker-only posts", async () => {
   assert(isEnglishText("The price of gold rose sharply today."));
   assert(isEnglishText("BUY BTC"));
   assert(!isEnglishText("هذا نص عربي للاختبار"));
   assert(!isEnglishText("El precio del oro subió esta mañana"));
   assert(!isEnglishText("BTC/USD 90,000"));
+  assert(needsTranslation("El precio del oro subió esta mañana", "ar"));
+  assert(!needsTranslation("هذا نص عربي للاختبار", "ar"));
+  assert(!needsTranslation("BTC/USD 90,000", "ar"));
   let calls = 0;
   const translator = async (text: string) => {
     calls++;
@@ -238,8 +247,8 @@ test("language detection translates English only and leaves Arabic and Spanish u
   );
   assert.equal(english.text, "ترجمة: Gold rose 2.5%");
   assert.equal(arabic.text, "ارتفع الذهب بنسبة 2.5%");
-  assert.equal(spanish.text, "El precio del oro subió");
-  assert.equal(calls, 1);
+  assert.equal(spanish.text, "ترجمة: El precio del oro subió");
+  assert.equal(calls, 2);
 });
 test("recommendation filter matches Arabic and English but not unrelated text", () => {
   const s = { ...source, filter: "recommendations" as const };
@@ -389,11 +398,17 @@ test("source-message fan-out reuses a translated body and does not quickly repea
       throw new Error("تم تجاوز حد الطلبات");
     };
     const allowOriginal = { ...source, translate: true, translationFailure: "original" as const };
-    const failed = await translate("another message", allowOriginal, failedMessageId, failingTranslator);
-    const cachedFailure = await translate("another message", allowOriginal, failedMessageId, failingTranslator);
-    assert.equal(failed.status, "fallback_original");
-    assert.equal(cachedFailure.status, "fallback_original");
+    await assert.rejects(
+      translate("another message", allowOriginal, failedMessageId, failingTranslator),
+      (error: unknown) => Boolean(error && typeof error === "object" && "translationHeld" in error),
+    );
+    await assert.rejects(
+      translate("another message", allowOriginal, failedMessageId, failingTranslator),
+      (error: unknown) => Boolean(error && typeof error === "object" && "translationHeld" in error),
+    );
     assert.equal(failedCalls, 1);
+    assert.equal((await getSetting<{ ok: boolean }>("translation_test", { ok: false }))?.ok, true,
+      "a single transient message failure must not invalidate the provider's explicit setup test");
 
     let invalidCalls = 0;
     const unchangedTranslator = async () => {
@@ -410,6 +425,20 @@ test("source-message fan-out reuses a translated body and does not quickly repea
       (error: unknown) => Boolean(error && typeof error === "object" && "translationHeld" in error),
     );
     assert.equal(invalidCalls, 1, "rejected translations are cached and never sent as the source text");
+
+    await setSetting("translation_test", {
+      provider: "openai", model: "missing-key-model", ok: false,
+      message: "missing key", checkedAt: new Date().toISOString(),
+    });
+    let unverifiedCalls = 0;
+    await assert.rejects(
+      translate("gold price", allowOriginal, undefined, async () => {
+        unverifiedCalls++;
+        return "ارتفع سعر الذهب.";
+      }),
+      (error: unknown) => Boolean(error && typeof error === "object" && "translationHeld" in error),
+    );
+    assert.equal(unverifiedCalls, 0, "do not send any text until the configured provider and model pass a live test");
   } finally {
     await pool.query("DELETE FROM messages WHERE source_key=$1", [sourceKey]);
     await setSetting("settings", previousSettings);

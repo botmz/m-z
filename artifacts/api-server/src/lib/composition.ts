@@ -1,4 +1,4 @@
-import { isEnglishText, translate } from "./translation";
+import { needsTranslation, translate } from "./translation";
 import { marketQuotes } from "./market";
 import { settings, type Channel } from "./store";
 import { removeSourceReferences, removeTextLinks, type TelegramTextEntity } from "./source-reference";
@@ -63,9 +63,9 @@ export async function compose(
     ? removeTextLinks(sourceCleanedBody.text, sourceCleanedBody.entities)
     : sourceCleanedBody;
   const translated = cleanedBody.text.trim()
-    ? source.translate && isEnglishText(cleanedBody.text)
+    ? source.translate && needsTranslation(cleanedBody.text, source.targetLanguage)
       ? await translator(cleanedBody.text, source)
-      : { text: cleanedBody.text, status: source.translate ? "not_english" : "not_requested" }
+      : { text: cleanedBody.text, status: source.translate ? "not_required" : "not_requested" }
     : { text: "", status: "not_requested" };
   const warnings: string[] = [];
   if (translated.warning) warnings.push(translated.warning);
