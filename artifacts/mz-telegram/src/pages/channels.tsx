@@ -184,7 +184,7 @@ function ChannelForm({
               <div className="sm:col-span-2"><Toggle id="translate" label="ترجمة الرسائل إلى العربية" checked={f.translate} onChange={(v) => { set('translate', v); if (v) set('targetLanguage', 'ar'); }} /></div>
               <div className="sm:col-span-2">
                 <Toggle id="skip-links" label="إزالة الروابط من نص الرسالة" checked={f.skipMessagesWithLinks} onChange={(v) => set('skipMessagesWithLinks', v)} />
-                <p className="mt-1 text-xs text-muted-foreground">عند التفعيل تُحذف الروابط الظاهرة فقط، وتبقى الكلمات المرتبطة برابط مخفي. تُرسل بقية الرسالة أو الوسيط ولا تُتجاهل الرسالة بسبب الرابط.</p>
+                <p className="mt-1 text-xs text-muted-foreground">عند التفعيل تُحذف الروابط من نص الرسالة الواردة فقط؛ تبقى روابط البادئة والخاتمة والتوقيع التي أضفتها أنت. تبقى الكلمات المرتبطة برابط مخفي، وتُرسل بقية الرسالة أو الوسيط.</p>
               </div>
               {f.translate && (
                 <Field label="عند فشل الترجمة" hint="تُعلّق الرسالة حتى لا يصل النص الأصلي إلى الوجهة.">

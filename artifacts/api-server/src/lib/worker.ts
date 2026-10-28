@@ -15,7 +15,7 @@ let interval: ReturnType<typeof setInterval> | undefined;
 let lastReaderCheck = 0, lastCatchUp = 0, lastBotCheck = 0;
 let blockedUntil = 0;
 export const workerState = { status: "stopped", detail: "عامل المعالجة متوقف", checkedAt: null as string | null };
-type Part = { method: "sendMessage" | "sendPhoto" | "sendVideo" | "sendMedia"; text: string; html?: string; hideSourceLink?: boolean; removeLinks?: boolean };
+type Part = { method: "sendMessage" | "sendPhoto" | "sendVideo" | "sendMedia"; text: string; html?: string; hideSourceLink?: boolean; removeLinks?: boolean; preserveConfiguredLinks?: boolean };
 
 export async function getWorkerHealth() {
   const [enabled, heartbeat] = await Promise.all([
@@ -74,7 +74,8 @@ async function processDelivery(id: number) {
     let plan: Part[] | null = Array.isArray(delivery.send_plan) ? delivery.send_plan : null;
     if (plan?.length && (
       Boolean(plan[0]?.hideSourceLink) !== hideSourceLink ||
-      Boolean(plan[0]?.removeLinks) !== removeLinks
+      Boolean(plan[0]?.removeLinks) !== removeLinks ||
+      (removeLinks && plan.some((part) => part.preserveConfiguredLinks !== true))
     )) {
       if (sentIds.length) {
         const reason = "تغير إعداد معالجة روابط المصدر بعد إرسال جزء من الرسالة؛ أُوقف الاستكمال لتجنب اختلاف المحتوى";
@@ -103,7 +104,7 @@ async function processDelivery(id: number) {
         await pool.query("INSERT INTO delivery_attempts(delivery_id,status,detail) VALUES($1,'skipped',$2)", [id, reason]);
         return;
       }
-      plan = plan.map((part) => ({ ...part, hideSourceLink, removeLinks }));
+      plan = plan.map((part) => ({ ...part, hideSourceLink, removeLinks, preserveConfiguredLinks: true }));
       await pool.query("UPDATE message_deliveries SET rendered_text=$2,translation_status=$3,send_plan=$4 WHERE id=$1", [id, composed.text, composed.translationStatus, JSON.stringify(plan)]);
     }
     if (!plan.length) throw new Error("لا توجد رسالة نصية أو صورة قابلة للنشر");

@@ -86,14 +86,12 @@ export async function compose(
   const sourcePrefix = hideSourceLink
     ? removeSourceReferences(source.prefix, [], source.username, source.name).text
     : source.prefix;
-  const linkCleanedPrefix = source.skipMessagesWithLinks ? removeTextLinks(sourcePrefix).text : sourcePrefix;
-  if (linkCleanedPrefix) prefix.push(linkCleanedPrefix);
+  if (sourcePrefix) prefix.push(sourcePrefix);
   const suffix: string[] = [];
   const sourceSuffix = hideSourceLink
     ? removeSourceReferences(source.suffix, [], source.username, source.name).text
     : source.suffix;
-  const linkCleanedSuffix = source.skipMessagesWithLinks ? removeTextLinks(sourceSuffix).text : sourceSuffix;
-  if (linkCleanedSuffix) suffix.push(linkCleanedSuffix);
+  if (sourceSuffix) suffix.push(sourceSuffix);
   if (destination.signatureEnabled && destination.suffix.trim()) {
     suffix.push(destination.suffix.trim());
   }

@@ -399,6 +399,30 @@ test("destination signature is appended only when enabled", async () => {
   const disabled = await compose({ ...source, attachSource: false }, { ...destination, signatureEnabled: false }, "محتوى الرسالة");
   assert.equal(disabled.text, "محتوى الرسالة");
 });
+test("source link removal preserves owner links in configured prefix, suffix, and destination signature", async () => {
+  const composed = await compose(
+    {
+      ...source,
+      attachSource: false,
+      skipMessagesWithLinks: true,
+      prefix: "تابعوني https://t.me/mz05999",
+      suffix: "للتواصل https://t.me/mz05999",
+    },
+    {
+      ...source,
+      id: -2,
+      kind: "destination",
+      username: "@destination",
+      attachSource: false,
+      signatureEnabled: true,
+      suffix: "القناة الرسمية https://t.me/mz05999",
+    },
+    "خبر مهم https://t.me/unit_test/123",
+  );
+  assert(!composed.text.includes("https://t.me/unit_test/123"));
+  assert.equal((composed.text.match(/https:\/\/t\.me\/mz05999/g) ?? []).length, 3);
+  assert(composed.text.includes("خبر مهم"));
+});
 test("source-message fan-out reuses a translated body and does not quickly repeat a failed request", async () => {
   const previousSettings = await settings();
   const previousTest = await getSetting<{
