@@ -8,4 +8,5 @@
 export interface RoutingRule {
   sourceId: number;
   destinationId: number;
+  hideSourceLink: boolean;
 }

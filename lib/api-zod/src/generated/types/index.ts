@@ -34,6 +34,7 @@ export * from './previewResult';
 export * from './qrState';
 export * from './routingInput';
 export * from './routingRule';
+export * from './routingRuleInput';
 export * from './serviceState';
 export * from './settings';
 export * from './settingsTranslationProvider';

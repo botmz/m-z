@@ -11,4 +11,9 @@ export interface SourceRoutingInput {
      * @items.maximum -1
      */
   destinationIds: number[];
+  /**
+     * @items.minimum -2147483648
+     * @items.maximum -1
+     */
+  hideSourceLinkDestinationIds?: number[];
 }

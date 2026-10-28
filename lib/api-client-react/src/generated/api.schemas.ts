@@ -147,10 +147,17 @@ export interface TestInput {
 export interface RoutingRule {
   sourceId: number;
   destinationId: number;
+  hideSourceLink: boolean;
+}
+
+export interface RoutingRuleInput {
+  sourceId: number;
+  destinationId: number;
+  hideSourceLink?: boolean;
 }
 
 export interface RoutingInput {
-  rules: RoutingRule[];
+  rules: RoutingRuleInput[];
 }
 
 export interface SourceRoutingInput {
@@ -159,6 +166,11 @@ export interface SourceRoutingInput {
      * @items.maximum -1
      */
   destinationIds: number[];
+  /**
+     * @items.minimum -2147483648
+     * @items.maximum -1
+     */
+  hideSourceLinkDestinationIds?: number[];
 }
 
 export interface MessageRecord {

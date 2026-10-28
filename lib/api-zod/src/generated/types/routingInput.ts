@@ -4,8 +4,8 @@
  * Api
  * OpenAPI spec version: 1.0.0
  */
-import type { RoutingRule } from './routingRule';
+import type { RoutingRuleInput } from './routingRuleInput';
 
 export interface RoutingInput {
-  rules: RoutingRule[];
+  rules: RoutingRuleInput[];
 }

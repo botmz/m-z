@@ -4,7 +4,11 @@ function routingError(message: string, status: number): Error & { status: number
   return Object.assign(new Error(message), { status });
 }
 
-export async function replaceSourceRouting(sourceId: number, destinationIds: number[]): Promise<void> {
+export async function replaceSourceRouting(
+  sourceId: number,
+  destinationIds: number[],
+  hideSourceLinkDestinationIds?: number[],
+): Promise<void> {
   if (!Number.isInteger(sourceId) || sourceId <= 0) {
     throw routingError("معرّف المصدر غير صالح", 400);
   }
@@ -13,6 +17,13 @@ export async function replaceSourceRouting(sourceId: number, destinationIds: num
     new Set(destinationIds).size !== destinationIds.length
   ) {
     throw routingError("قائمة الوجهات غير صالحة أو تحتوي على تكرار", 400);
+  }
+  if (
+    hideSourceLinkDestinationIds?.some((id) => !Number.isInteger(id) || id >= 0 || id < -2147483648) ||
+    new Set(hideSourceLinkDestinationIds ?? []).size !== (hideSourceLinkDestinationIds ?? []).length ||
+    (hideSourceLinkDestinationIds ?? []).some((id) => !destinationIds.includes(id))
+  ) {
+    throw routingError("قائمة الوجهات المختارة لإخفاء رابط المصدر غير صالحة", 400);
   }
 
   const destinationDbIds = destinationIds.map(Math.abs);
@@ -35,11 +46,21 @@ export async function replaceSourceRouting(sourceId: number, destinationIds: num
       }
     }
 
+    const previous = await client.query(
+      "SELECT destination_id,hide_source_link FROM routing_rules WHERE source_id=$1",
+      [sourceId],
+    );
+    const previousHidden = new Set<number>(
+      previous.rows.filter((row) => row.hide_source_link).map((row) => -row.destination_id),
+    );
+    const hiddenDestinations = hideSourceLinkDestinationIds === undefined
+      ? previousHidden
+      : new Set(hideSourceLinkDestinationIds);
     await client.query("DELETE FROM routing_rules WHERE source_id=$1", [sourceId]);
     for (const destinationId of destinationDbIds) {
       await client.query(
-        "INSERT INTO routing_rules(source_id,destination_id) VALUES($1,$2)",
-        [sourceId, destinationId],
+        "INSERT INTO routing_rules(source_id,destination_id,hide_source_link) VALUES($1,$2,$3)",
+        [sourceId, destinationId, hiddenDestinations.has(-destinationId)],
       );
     }
     await client.query("COMMIT");

@@ -13,7 +13,7 @@ let interval: ReturnType<typeof setInterval> | undefined;
 let lastReaderCheck = 0, lastCatchUp = 0, lastBotCheck = 0;
 let blockedUntil = 0;
 export const workerState = { status: "stopped", detail: "عامل المعالجة متوقف", checkedAt: null as string | null };
-type Part = { method: "sendMessage" | "sendPhoto"; text: string; html?: string };
+type Part = { method: "sendMessage" | "sendPhoto"; text: string; html?: string; hideSourceLink?: boolean };
 
 async function processDelivery(id: number) {
   const { rows } = await pool.query(`SELECT d.*,m.source_id,m.source_key,m.telegram_message_id,m.text,m.has_photo,m.entities
@@ -39,20 +39,30 @@ async function processDelivery(id: number) {
     await pool.query("INSERT INTO delivery_attempts(delivery_id,status,detail) VALUES($1,$2,$3)", [id, status, reason]);
     return;
   }
-  const route = await pool.query("SELECT 1 FROM routing_rules WHERE source_id=$1 AND destination_id=$2", [delivery.source_id, delivery.destination_id]);
+  const route = await pool.query("SELECT hide_source_link FROM routing_rules WHERE source_id=$1 AND destination_id=$2", [delivery.source_id, delivery.destination_id]);
   if (!source.enabled || !destination.enabled || !route.rows.length) {
     await pool.query("UPDATE message_deliveries SET status='held',error=$2,updated_at=now() WHERE id=$1", [id, "المصدر أو الوجهة معطل أو لم تعد قاعدة الربط موجودة"]);
     return;
   }
+  const hideSourceLink = Boolean(route.rows[0].hide_source_link);
   const config = await settings();
   const sentIds: number[] = delivery.telegram_message_ids ?? [];
   let attemptedSend = false;
   try {
     await pool.query("UPDATE message_deliveries SET status='processing',attempts=attempts+1,updated_at=now() WHERE id=$1", [id]);
     await pool.query("INSERT INTO delivery_attempts(delivery_id,status,detail) VALUES($1,'processing',$2)", [id, `محاولة ${delivery.attempts + 1}`]);
-    let plan: Part[] = delivery.send_plan;
+    let plan: Part[] | null = Array.isArray(delivery.send_plan) ? delivery.send_plan : null;
+    if (plan?.length && Boolean(plan[0]?.hideSourceLink) !== hideSourceLink) {
+      if (sentIds.length) {
+        const reason = "تغير إعداد إخفاء رابط المصدر بعد إرسال جزء من الرسالة؛ أُوقف الاستكمال لتجنب اختلاف المحتوى";
+        await pool.query("UPDATE message_deliveries SET status='held',error=$2,updated_at=now() WHERE id=$1", [id, reason]);
+        await pool.query("INSERT INTO delivery_attempts(delivery_id,status,detail) VALUES($1,'held',$2)", [id, reason]);
+        return;
+      }
+      plan = null;
+    }
     if (!plan) {
-      const composed = await compose(source, destination, delivery.text, delivery.telegram_message_id, delivery.entities);
+      const composed = await compose(source, destination, delivery.text, delivery.telegram_message_id, delivery.entities, hideSourceLink);
       plan = [];
       const photo = delivery.has_photo && source.mediaMode === "include";
       const canHtml = destination.format === "html";
@@ -64,17 +74,28 @@ async function processDelivery(id: number) {
           if (composed.text) plan.push({ method: "sendMessage", text: composed.text, html: canHtml ? composed.html : undefined });
         } else plan.push(...splitText(composed.text).map(text => ({ method: "sendMessage" as const, text })));
       }
+      if (!composed.text.trim() && !photo) {
+        const reason = "تم تجاوز المنشور بعد إزالة إحالة المصدر لعدم بقاء محتوى قابل للإرسال";
+        await pool.query("UPDATE message_deliveries SET status='skipped',error=$2,updated_at=now() WHERE id=$1", [id, reason]);
+        await pool.query("INSERT INTO delivery_attempts(delivery_id,status,detail) VALUES($1,'skipped',$2)", [id, reason]);
+        return;
+      }
+      plan = plan.map((part) => ({ ...part, hideSourceLink }));
       await pool.query("UPDATE message_deliveries SET rendered_text=$2,translation_status=$3,send_plan=$4 WHERE id=$1", [id, composed.text, composed.translationStatus, JSON.stringify(plan)]);
     }
     if (!plan.length) throw new Error("لا توجد رسالة نصية أو صورة قابلة للنشر");
     for (let index = sentIds.length; index < plan.length; index++) {
       if (!await getSetting("worker_enabled", false)) throw Object.assign(new Error("تم إيقاف العامل مؤقتاً"), { held: true });
-      const current = await pool.query(`SELECT s.config->>'skipMessagesWithLinks' AS "skipMessagesWithLinks"
+      const current = await pool.query(`SELECT s.config->>'skipMessagesWithLinks' AS "skipMessagesWithLinks",
+          r.hide_source_link AS "hideSourceLink"
         FROM source_channels s JOIN routing_rules r ON r.source_id=s.id
         JOIN destination_channels d ON d.id=r.destination_id WHERE s.id=$1 AND d.id=$2 AND s.enabled AND d.enabled`, [source.id, delivery.destination_id]);
       if (!current.rows.length) throw Object.assign(new Error("تم تعطيل قناة أو حذف قاعدة الربط"), { held: true });
       if (current.rows[0].skipMessagesWithLinks === "true" && containsLink(delivery.text, delivery.entities ?? [])) {
         throw Object.assign(new Error("تم إيقاف الإرسال لأن المصدر أصبح يتجاهل الرسائل التي تحتوي على روابط"), { held: true });
+      }
+      if (Boolean(current.rows[0].hideSourceLink) !== Boolean(plan[0]?.hideSourceLink)) {
+        throw Object.assign(new Error("تغير إعداد إخفاء رابط المصدر أثناء تجهيز الرسالة؛ أعد محاولتها"), { held: true });
       }
       const part = plan[index]!;
       let photo: Buffer | undefined;

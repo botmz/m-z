@@ -28,4 +28,5 @@ export const routingRules = pgTable("routing_rules", {
   id: serial("id").primaryKey(),
   sourceId: integer("source_id").notNull().references(() => sourceChannels.id, { onDelete: "cascade" }),
   destinationId: integer("destination_id").notNull().references(() => destinationChannels.id, { onDelete: "cascade" }),
+  hideSourceLink: boolean("hide_source_link").notNull().default(false),
 }, (t) => [uniqueIndex("routing_unique").on(t.sourceId, t.destinationId)]);

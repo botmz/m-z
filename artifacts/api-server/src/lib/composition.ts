@@ -1,6 +1,7 @@
 import { translate } from "./translation";
 import { marketQuotes } from "./market";
 import { settings, type Channel } from "./store";
+import { removeSourceReferences, type TelegramTextEntity } from "./source-reference";
 
 export const escapeHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 export function sourceLink(username: string, messageId?: number) {
@@ -47,8 +48,20 @@ export function originalHtml(text: string, entities: any[] = []) {
   }
   return out + escapeHtml(text.slice(cursor));
 }
-export async function compose(source: Channel, destination: Channel, text: string, messageId?: number, entities: any[] = []) {
-  const translated = await translate(text, source);
+export async function compose(
+  source: Channel,
+  destination: Channel,
+  text: string,
+  messageId?: number,
+  entities: TelegramTextEntity[] = [],
+  hideSourceLink = false,
+) {
+  const cleanedBody = hideSourceLink
+    ? removeSourceReferences(text, entities, source.username, source.name)
+    : { text, entities };
+  const translated = cleanedBody.text.trim()
+    ? await translate(cleanedBody.text, source)
+    : { text: "", status: "not_requested" };
   const warnings: string[] = [];
   if (translated.warning) warnings.push(translated.warning);
   const prefix: string[] = [];
@@ -65,16 +78,24 @@ export async function compose(source: Channel, destination: Channel, text: strin
       prefix.push(marketPriceLine(symbol, quote.price, quote.direction, quote.stale));
     }
   }
-  if (source.prefix) prefix.push(source.prefix);
+  const sourcePrefix = hideSourceLink
+    ? removeSourceReferences(source.prefix, [], source.username, source.name).text
+    : source.prefix;
+  if (sourcePrefix) prefix.push(sourcePrefix);
   const suffix: string[] = [];
-  if (source.suffix) suffix.push(source.suffix);
+  const sourceSuffix = hideSourceLink
+    ? removeSourceReferences(source.suffix, [], source.username, source.name).text
+    : source.suffix;
+  if (sourceSuffix) suffix.push(sourceSuffix);
   const channelUrl = sourceLink(source.username);
-  const existingText = [...prefix, translated.text, source.suffix].join("\n").toLowerCase();
-  if (source.attachSource && !existingText.includes(channelUrl.toLowerCase())) {
+  const existingText = [...prefix, translated.text, ...suffix].join("\n").toLowerCase();
+  if (source.attachSource && !hideSourceLink && !existingText.includes(channelUrl.toLowerCase())) {
     suffix.push(`المصدر: ${source.name}\n${sourceLink(source.username, messageId)}`);
   }
   const renderedText = [...prefix, translated.text, ...suffix].filter(Boolean).join("\n\n");
-  const bodyHtml = translated.status === "translated" ? escapeHtml(translated.text) : originalHtml(text, entities);
+  const bodyHtml = translated.status === "translated"
+    ? escapeHtml(translated.text)
+    : originalHtml(cleanedBody.text, cleanedBody.entities);
   const html = [...prefix.map(escapeHtml), bodyHtml, ...suffix.map(escapeHtml)].filter(Boolean).join("\n\n");
   if (renderedText.length > 4096) warnings.push("سيُقسم النص إلى عدة رسائل بسبب حدود Telegram؛ التنسيق الطويل سيستخدم النص العادي");
   return { text: renderedText, html, translationStatus: translated.status, warnings };

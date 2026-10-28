@@ -1,7 +1,8 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { GEMINI_FREE_MODEL, protectTokens, requestGeminiTranslation, restoreTokens } from "../src/lib/translation";
-import { acceptsMessage, containsLink, sourceLink, splitText, originalHtml, escapeHtml, marketPriceLine } from "../src/lib/composition";
+import { acceptsMessage, containsLink, sourceLink, splitText, originalHtml, escapeHtml, marketPriceLine, compose } from "../src/lib/composition";
+import { removeSourceReferences } from "../src/lib/source-reference";
 import { direction } from "../src/lib/market";
 import { channelRow, normalizeUsername, sameTelegramUsername, pool, type Channel } from "../src/lib/store";
 import { CreateChannelBody, SaveChannelRoutingBody } from "@workspace/api-zod";
@@ -118,6 +119,53 @@ test("source link uses real public message identifiers", () => {
   assert.equal(sourceLink("@abcde", 234), "https://t.me/abcde/234");
   assert.equal(sourceLink("@abcde"), "https://t.me/abcde");
 });
+test("source reference cleanup removes only the selected channel's visible links and mentions", () => {
+  assert.equal(
+    removeSourceReferences("خبر اليوم https://t.me/unit_test/123.", [], source.username, source.name).text,
+    "خبر اليوم",
+  );
+  assert.equal(
+    removeSourceReferences("قبل https://t.me/s/UNIT_TEST/123 وبعد", [], source.username, source.name).text,
+    "قبل وبعد",
+  );
+  assert.equal(
+    removeSourceReferences("تابعونا @UNIT_TEST", [], source.username, source.name).text,
+    "",
+  );
+  assert.equal(
+    removeSourceReferences("معلومة مهمة\nالمصدر: http://t.me/unit_test\nتفاصيل إضافية", [], source.username, source.name).text,
+    "معلومة مهمة\nتفاصيل إضافية",
+  );
+  const caption = "تعليق الصورة https://t.me/unit_test/52";
+  assert.equal(removeSourceReferences(caption, [], source.username, source.name).text, "تعليق الصورة");
+  const unrelated = "رابط الخبر https://news.example/story وقناة أخرى https://t.me/other_channel/9";
+  assert.equal(removeSourceReferences(unrelated, [], source.username, source.name).text, unrelated);
+  const plain = "لا يحتوي المنشور على إحالة";
+  assert.deepEqual(removeSourceReferences(plain, [], source.username, source.name), { text: plain, entities: [] });
+});
+test("source cleanup removes hidden source links and remaps unrelated link entities", () => {
+  const text = "Read link, keep external";
+  const cleaned = removeSourceReferences(text, [
+    { className: "MessageEntityTextUrl", offset: text.indexOf("link"), length: 4, url: "https://t.me/unit_test/22" },
+    { className: "MessageEntityTextUrl", offset: text.indexOf("external"), length: 8, url: "https://example.com" },
+  ], source.username, source.name);
+  assert.equal(cleaned.text, "Read keep external");
+  assert.deepEqual(cleaned.entities, [
+    { className: "MessageEntityTextUrl", offset: 10, length: 8, url: "https://example.com" },
+  ]);
+});
+test("route hide-source option runs before composition while disabled routes keep the source link", async () => {
+  const destination: Channel = {
+    ...source, id: -2, kind: "destination", name: "Destination", username: "@unit_destination",
+    attachSource: false,
+  };
+  const message = "خبر https://t.me/unit_test/3";
+  const preserved = await compose(source, destination, message, undefined, [], false);
+  const hidden = await compose(source, destination, message, undefined, [], true);
+  assert(preserved.text.includes("https://t.me/unit_test/3"));
+  assert(!hidden.text.includes("t.me/unit_test"));
+  assert(!hidden.text.includes(source.name));
+});
 test("market price line omits provider and timestamp while retaining stale-price warning", () => {
   const fresh = marketPriceLine("BTC/USD", 81671.65, "down", false);
   assert.equal(fresh, "البيتكوين BTC/USD: 81,671.65 $ ▼");
@@ -208,23 +256,32 @@ test("editing a source replaces only its selected destinations and rolls back in
       [`route destination other ${suffix}`, `@mz_dst_other_${suffix}`],
     )).rows[0].id;
 
-    assert(SaveChannelRoutingBody.safeParse({ destinationIds: [-destinationId, -otherDestinationId] }).success);
+    assert(SaveChannelRoutingBody.safeParse({
+      destinationIds: [-destinationId, -otherDestinationId],
+      hideSourceLinkDestinationIds: [-destinationId],
+    }).success);
     assert(!SaveChannelRoutingBody.safeParse({ destinationIds: [destinationId] }).success);
 
-    await replaceSourceRouting(sourceId, [-destinationId, -otherDestinationId]);
-    await replaceSourceRouting(otherSourceId, [-otherDestinationId]);
+    await replaceSourceRouting(sourceId, [-destinationId, -otherDestinationId], [-destinationId]);
+    await replaceSourceRouting(otherSourceId, [-otherDestinationId], []);
     await replaceSourceRouting(sourceId, [-destinationId]);
 
     const selected = await db.query(
-      "SELECT destination_id FROM routing_rules WHERE source_id=$1 ORDER BY destination_id",
+      "SELECT destination_id,hide_source_link FROM routing_rules WHERE source_id=$1 ORDER BY destination_id",
       [sourceId],
     );
     const otherSelected = await db.query(
       "SELECT destination_id FROM routing_rules WHERE source_id=$1",
       [otherSourceId],
     );
-    assert.deepEqual(selected.rows.map((row) => row.destination_id), [destinationId]);
+    assert.deepEqual(selected.rows.map((row) => ({ destinationId: row.destination_id, hideSourceLink: row.hide_source_link })), [
+      { destinationId, hideSourceLink: true },
+    ]);
     assert.deepEqual(otherSelected.rows.map((row) => row.destination_id), [otherDestinationId]);
+    await assert.rejects(() => replaceSourceRouting(sourceId!, [-destinationId!], [-otherDestinationId!]), /غير صالحة/);
+    await replaceSourceRouting(sourceId, [-destinationId], []);
+    const unhidden = await db.query("SELECT hide_source_link FROM routing_rules WHERE source_id=$1", [sourceId]);
+    assert.equal(unhidden.rows[0].hide_source_link, false);
 
     await assert.rejects(() => replaceSourceRouting(sourceId!, [-2147483647]), /غير موجودة/);
     const afterFailure = await db.query(

@@ -407,22 +407,34 @@ components:
         send: { type: boolean, description: Explicit confirmation to send a test message }
     RoutingRule:
       type: object
+      required: [sourceId, destinationId, hideSourceLink]
+      properties:
+        sourceId: { type: integer }
+        destinationId: { type: integer }
+        hideSourceLink: { type: boolean }
+    RoutingRuleInput:
+      type: object
       required: [sourceId, destinationId]
       properties:
         sourceId: { type: integer }
         destinationId: { type: integer }
+        hideSourceLink: { type: boolean }
     RoutingInput:
       type: object
       required: [rules]
       properties:
         rules:
           type: array
-          items: { $ref: '#/components/schemas/RoutingRule' }
+          items: { $ref: '#/components/schemas/RoutingRuleInput' }
     SourceRoutingInput:
       type: object
       required: [destinationIds]
       properties:
         destinationIds:
+          type: array
+          uniqueItems: true
+          items: { type: integer, minimum: -2147483648, maximum: -1 }
+        hideSourceLinkDestinationIds:
           type: array
           uniqueItems: true
           items: { type: integer, minimum: -2147483648, maximum: -1 }
