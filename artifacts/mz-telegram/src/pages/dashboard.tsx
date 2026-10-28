@@ -1,5 +1,5 @@
 import { Link } from 'wouter';
-import { RefreshCw, Inbox, ScrollText } from 'lucide-react';
+import { RefreshCw, Inbox, ScrollText, AlertTriangle } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { getGetDashboardQueryKey, useGetDashboard } from '@workspace/api-client-react';
 import { Button } from '@/components/ui/button';
@@ -35,6 +35,15 @@ export default function Dashboard() {
       {q.isError && <ErrorBox error={q.error} onRetry={() => q.refetch()} />}
       {d && (
         <div className="space-y-5">
+          {d.workerStatus === 'stale' && (
+            <div role="alert" className="flex items-start gap-3 rounded-lg border border-danger/40 bg-danger/10 p-4 text-sm text-danger" data-testid="alert-worker-stale">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+              <div>
+                <p className="font-semibold">توقفت نبضات عامل المعالجة</p>
+                <p className="mt-1">لم تصل نبضة حديثة خلال المهلة المحددة. تحقّق من خدمة العامل قبل الاعتماد على تحويل الرسائل.</p>
+              </div>
+            </div>
+          )}
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rise flex items-center justify-between rounded-lg border border-gold/40 bg-gradient-to-l from-gold/10 to-card p-4">
               <div><div className="text-xs font-semibold text-muted-foreground">العامل</div><div className="mt-1 text-lg font-bold">خدمة التحويل</div></div>

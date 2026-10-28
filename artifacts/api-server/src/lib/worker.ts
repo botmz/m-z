@@ -5,6 +5,7 @@ import { compose, createSendPlan } from "./composition";
 import { translate } from "./translation";
 import { refreshPrices } from "./market";
 import { logger } from "./logger";
+import { resolveWorkerHealth, type WorkerHeartbeat } from "./worker-health";
 import type { PoolClient } from "@workspace/db";
 
 let loopBusy = false;
@@ -15,6 +16,33 @@ let lastReaderCheck = 0, lastCatchUp = 0, lastBotCheck = 0;
 let blockedUntil = 0;
 export const workerState = { status: "stopped", detail: "عامل المعالجة متوقف", checkedAt: null as string | null };
 type Part = { method: "sendMessage" | "sendPhoto" | "sendVideo" | "sendMedia"; text: string; html?: string; hideSourceLink?: boolean; removeLinks?: boolean };
+
+export async function getWorkerHealth() {
+  const [enabled, heartbeat] = await Promise.all([
+    getSetting("worker_enabled", false),
+    getSetting<WorkerHeartbeat | null>("worker_heartbeat", null),
+  ]);
+  const health = resolveWorkerHealth(heartbeat, enabled, Date.now());
+
+  if (health.status === "stale") {
+    const alertKey = JSON.stringify(heartbeat?.checkedAt ?? "missing");
+    const { rows } = await pool.query(
+      `INSERT INTO app_settings(key,value) VALUES('worker_stale_alert',$1::jsonb)
+       ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value
+       WHERE app_settings.value IS DISTINCT FROM EXCLUDED.value
+       RETURNING key`,
+      [alertKey],
+    );
+    if (rows.length) await audit("warning", "worker", health.detail);
+  } else {
+    await pool.query(
+      `INSERT INTO app_settings(key,value) VALUES('worker_stale_alert','null'::jsonb)
+       ON CONFLICT(key) DO UPDATE SET value='null'::jsonb
+       WHERE app_settings.value IS DISTINCT FROM 'null'::jsonb`,
+    );
+  }
+  return health;
+}
 
 async function processDelivery(id: number) {
   const { rows } = await pool.query(`SELECT d.*,m.source_id,m.source_key,m.telegram_message_id,m.text,m.has_photo,m.entities
@@ -198,6 +226,8 @@ export async function control(action: string) {
   if (action === "pause") {
     await setSetting("worker_enabled", false);
     Object.assign(workerState, { status: "paused", detail: "متوقف مؤقتاً؛ الإرسال الجاري قد يكتمل" });
+    workerState.checkedAt = new Date().toISOString();
+    await setSetting("worker_heartbeat", workerState);
     await audit("info", "worker", "تم إيقاف المعالجة مؤقتاً؛ الإعدادات محفوظة");
     return { ok: true, message: "تم إيقاف المعالجة مؤقتاً؛ قد يكتمل الإرسال الجاري" };
   }

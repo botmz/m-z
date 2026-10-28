@@ -67,6 +67,7 @@ const LABELS: Record<string, [string, Tone]> = {
   translated: ['تمت الترجمة', 'good'],
   failed: ['فشل', 'bad'],
   error: ['خطأ', 'bad'],
+  stale: ['نبضة قديمة', 'bad'],
   down: ['متوقف', 'bad'],
   disconnected: ['غير متصل', 'bad'],
   expired: ['منتهي', 'bad'],

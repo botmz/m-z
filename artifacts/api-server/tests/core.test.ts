@@ -11,6 +11,7 @@ import { channelRow, normalizeUsername, sameTelegramUsername, pool, getSetting, 
 import { CreateChannelBody, SaveChannelRoutingBody } from "@workspace/api-zod";
 import { replaceSourceRouting } from "../src/lib/routing";
 import { isVideoDocument } from "../src/lib/telegram-reader";
+import { resolveWorkerHealth, WORKER_HEARTBEAT_STALE_AFTER_MS } from "../src/lib/worker-health";
 
 const source: Channel = {
   id: 1, kind: "source", name: "Unit Test", username: "@unit_test", enabled: true,
@@ -144,6 +145,21 @@ test("market direction uses only the previous successful reading", () => {
   assert.equal(direction(10, 10), "neutral");
   assert.equal(direction(11, 10), "up");
   assert.equal(direction(9, 10), "down");
+});
+test("worker health distinguishes a fresh heartbeat, a missing heartbeat, and a stale heartbeat", () => {
+  const now = Date.parse("2026-10-28T12:00:00.000Z");
+  const fresh = {
+    status: "running",
+    detail: "العامل يستقبل ويعالج الرسائل",
+    checkedAt: new Date(now - WORKER_HEARTBEAT_STALE_AFTER_MS + 1).toISOString(),
+  };
+  assert.equal(resolveWorkerHealth(fresh, true, now).status, "running");
+  assert.equal(resolveWorkerHealth(null, true, now).status, "stale");
+  assert.equal(
+    resolveWorkerHealth({ ...fresh, checkedAt: new Date(now - WORKER_HEARTBEAT_STALE_AFTER_MS - 1).toISOString() }, true, now).status,
+    "stale",
+  );
+  assert.equal(resolveWorkerHealth(fresh, false, now).status, "stopped");
 });
 test("valid public channel names normalize consistently", () => {
   for (const value of [

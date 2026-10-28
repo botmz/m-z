@@ -7,7 +7,7 @@ import {
 import { pool, channels, channel, messageHistory, logs, settings, setSetting, getSetting, audit, safeError } from "../../lib/store";
 import { botState, testDestination } from "../../lib/telegram-bot";
 import { readerState, readerStatus, beginQr, qrState, submitQrPassword } from "../../lib/telegram-reader";
-import { workerState, control } from "../../lib/worker";
+import { control, getWorkerHealth } from "../../lib/worker";
 import { marketQuotes, refreshPrices } from "../../lib/market";
 import { compose } from "../../lib/composition";
 import { sendManualMessage } from "../../lib/telegram-manual-send";
@@ -24,6 +24,7 @@ operationsRouter.use(createTelegramQrRouter({
 }));
 operationsRouter.get("/dashboard", async (_req, res) => {
   const config = await settings();
+  const workerHealth = await getWorkerHealth();
   const [list, recentMessages, recentLogs, counts, activity] = await Promise.all([
     channels(), messageHistory(), logs(), pool.query(`SELECT
       (SELECT count(*) FROM messages WHERE (created_at AT TIME ZONE $1)::date=(now() AT TIME ZONE $1)::date)::int AS processed,
@@ -39,7 +40,7 @@ operationsRouter.get("/dashboard", async (_req, res) => {
   ]);
   const row = counts.rows[0];
   res.json(GetDashboardResponse.parse({
-    workerStatus: workerState.status, telegramStatus: readerStatus(),
+    workerStatus: workerHealth.status, telegramStatus: readerStatus(),
     sources: list.filter(c => c.kind === "source" && c.enabled).length,
     destinations: list.filter(c => c.kind === "destination" && c.enabled).length,
     processedToday: row.processed, sentToday: row.sent, failed: row.failed, pending: row.pending,
@@ -60,6 +61,7 @@ operationsRouter.post("/messages/:id/retry", async (req, res) => {
 });
 operationsRouter.get("/logs", async (req, res) => {
   const q = GetLogsQueryParams.parse(req.query);
+  await getWorkerHealth();
   res.json(GetLogsResponse.parse(await logs(q.search, q.level === "warn" ? "warning" : q.level)));
 });
 operationsRouter.get("/settings", async (_req, res) => { res.json(GetSettingsResponse.parse(await settings())); });
@@ -157,6 +159,7 @@ operationsRouter.post("/preview/send", async (req, res): Promise<void> => {
 });
 operationsRouter.get("/services", async (_req, res) => {
   await pool.query("SELECT 1");
+  const workerHealth = await getWorkerHealth();
   const config = await settings();
   const translationTest = await getSetting<TranslationTestRecord | null>("translation_test", null);
   const translationCredentialMissing = config.translationProvider === "gemini" ? !process.env.GEMINI_API_KEY
@@ -176,7 +179,7 @@ operationsRouter.get("/services", async (_req, res) => {
     { id: "database", name: "قاعدة البيانات", status: "connected", detail: "PostgreSQL متصلة — فحص فعلي", checkedAt: new Date().toISOString() },
     { ...botState, id: "bot", name: "Telegram Bot API" },
     { id: "reader", name: "قارئ Telegram MTProto", ...readerState, status: readerStatus() },
-    { id: "worker", name: "عامل المعالجة", ...workerState },
+    { id: "worker", name: "عامل المعالجة", ...workerHealth },
     { id: "market", name: "مزود أسعار السوق", status: marketError ? "error" : market.length === 2 && market.every(p => !p.stale) ? "connected" : "unverified",
       detail: marketError || "Coinbase للبيتكوين • Gold API للذهب • المقارنة بآخر قراءة ناجحة", checkedAt: market[0]?.updatedAt ?? null },
     { id: "translation", name: "خدمة الترجمة", ...translationService },
