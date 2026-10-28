@@ -346,22 +346,27 @@ test("source cleanup removes hidden source links and remaps unrelated link entit
     { className: "MessageEntityTextUrl", offset: 10, length: 8, url: "https://example.com" },
   ]);
 });
-test("hiding a source link preserves the sender link in the same footer line", async () => {
+test("hiding a source link preserves unrelated links but ignores legacy source footer settings", async () => {
   const text = "خبر مهم\nالمصدر: https://t.me/unit_test/123 | المرسل: https://t.me/mz05999\nتابعونا";
   const cleaned = removeSourceReferences(text, [], source.username, source.name);
   assert.equal(cleaned.text, "خبر مهم\nالمرسل: https://t.me/mz05999\nتابعونا");
 
-  const destination: Channel = { ...source, id: -2, kind: "destination", username: "@destination", attachSource: false };
+  const destination: Channel = {
+    ...source, id: -2, kind: "destination", username: "@destination",
+    attachSource: false, signatureEnabled: true, suffix: "رابطنا https://t.me/official",
+  };
   const composed = await compose(
-    { ...source, suffix: "المصدر: https://t.me/unit_test/123 | المرسل: https://t.me/mz05999" },
+    { ...source, prefix: "بادئة قديمة https://t.me/legacy", suffix: "المصدر: https://t.me/unit_test/123 | المرسل: https://t.me/mz05999" },
     destination,
     "خبر مهم",
     undefined,
     [],
     true,
   );
-  assert(composed.text.includes("https://t.me/mz05999"));
+  assert(!composed.text.includes("https://t.me/mz05999"));
+  assert(!composed.text.includes("https://t.me/legacy"));
   assert(!composed.text.includes("https://t.me/unit_test"));
+  assert(composed.text.includes("https://t.me/official"));
 });
 test("route hide-source option runs before composition while disabled routes keep the source link", async () => {
   const destination: Channel = {
@@ -399,7 +404,7 @@ test("destination signature is appended only when enabled", async () => {
   const disabled = await compose({ ...source, attachSource: false }, { ...destination, signatureEnabled: false }, "محتوى الرسالة");
   assert.equal(disabled.text, "محتوى الرسالة");
 });
-test("source link removal preserves owner links in configured prefix, suffix, and destination signature", async () => {
+test("source link removal ignores legacy source additions and preserves destination signature", async () => {
   const composed = await compose(
     {
       ...source,
@@ -420,7 +425,7 @@ test("source link removal preserves owner links in configured prefix, suffix, an
     "خبر مهم https://t.me/unit_test/123",
   );
   assert(!composed.text.includes("https://t.me/unit_test/123"));
-  assert.equal((composed.text.match(/https:\/\/t\.me\/mz05999/g) ?? []).length, 3);
+  assert.equal((composed.text.match(/https:\/\/t\.me\/mz05999/g) ?? []).length, 1);
   assert(composed.text.includes("خبر مهم"));
 });
 test("source-message fan-out reuses a translated body and does not quickly repeat a failed request", async () => {

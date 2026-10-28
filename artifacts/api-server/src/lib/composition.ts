@@ -83,15 +83,7 @@ export async function compose(
       prefix.push(marketPriceLine(symbol, quote.price, quote.direction, quote.stale));
     }
   }
-  const sourcePrefix = hideSourceLink
-    ? removeSourceReferences(source.prefix, [], source.username, source.name).text
-    : source.prefix;
-  if (sourcePrefix) prefix.push(sourcePrefix);
   const suffix: string[] = [];
-  const sourceSuffix = hideSourceLink
-    ? removeSourceReferences(source.suffix, [], source.username, source.name).text
-    : source.suffix;
-  if (sourceSuffix) suffix.push(sourceSuffix);
   if (destination.signatureEnabled && destination.suffix.trim()) {
     suffix.push(destination.suffix.trim());
   }
