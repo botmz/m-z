@@ -50,6 +50,7 @@ export function originalHtml(text: string, entities: any[] = []) {
 export async function compose(source: Channel, destination: Channel, text: string, messageId?: number, entities: any[] = []) {
   const translated = await translate(text, source);
   const warnings: string[] = [];
+  if (translated.warning) warnings.push(translated.warning);
   const prefix: string[] = [];
   if (!source.enabled || !destination.enabled) warnings.push("القناة معطلة؛ المعاينة لا تعني السماح بالإرسال");
   if (destination.marketEnabled) {

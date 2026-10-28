@@ -52,7 +52,23 @@ test("Gemini free translation uses the fixed model and keeps its API key out of 
   assert.equal(headers.get("x-goog-api-key"), "test-secret");
   const body = JSON.parse(String(requestOptions?.body));
   assert.equal(body.contents[0].parts[0].text, "⟦MZ0⟧ hello");
-  assert.equal(body.generationConfig.temperature, 0);
+  assert.equal(body.generationConfig.temperature, undefined);
+  assert.equal(body.generationConfig.maxOutputTokens, 8192);
+});
+test("Gemini quota failures explain the free limit without exposing response content", async () => {
+  await assert.rejects(
+    requestGeminiTranslation("hello", "ar", "test-secret", async () => new Response(
+      JSON.stringify({ error: { message: "provider response detail" } }),
+      { status: 429 },
+    )),
+    (error: unknown) => {
+      assert(error instanceof Error);
+      assert.match(error.message, /تم تجاوز حصة Gemini المجانية.*HTTP 429/);
+      assert(!error.message.includes("provider response detail"));
+      assert(!error.message.includes("test-secret"));
+      return true;
+    },
+  );
 });
 test("market direction uses only the previous successful reading", () => {
   assert.equal(direction(10, null), "neutral");
