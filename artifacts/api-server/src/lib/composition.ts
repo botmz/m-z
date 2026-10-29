@@ -89,7 +89,9 @@ export async function compose(
   }
   const suffix: string[] = [];
   if (destination.signatureEnabled && content.showSignature && destination.suffix.trim()) {
-    suffix.push(destination.suffix.trim());
+    const configuredSignature = destination.suffix.trim();
+    const signature = content.showLinks ? configuredSignature : removeTextLinks(configuredSignature).text.trim();
+    if (signature) suffix.push(signature);
   }
   const channelUrl = sourceLink(source.username);
   const existingText = [...prefix, cleanedBody.text, ...suffix].join("\n").toLowerCase();
@@ -116,6 +118,10 @@ export function splitText(text: string, max = 4000): string[] {
 }
 
 export type ComposedPart = { method: "sendMessage" | "sendMedia"; text: string; html?: string };
+export const CURRENT_LINK_POLICY_VERSION = 2;
+export function savedPlanNeedsLinkRefresh(removeLinks: boolean, savedVersion: unknown) {
+  return removeLinks && savedVersion !== CURRENT_LINK_POLICY_VERSION;
+}
 export function savedPlanDisposition(savedStatus: string, sentPartCount: number): "reuse" | "rebuild" | "hold" {
   if (savedStatus !== "translated") return "reuse";
   return sentPartCount > 0 ? "hold" : "rebuild";

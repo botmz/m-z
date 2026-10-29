@@ -1,7 +1,7 @@
 import { pool, getSetting, setSetting, settings, audit, safeError, channel, sameTelegramUsername, claimDelivery } from "./store";
 import { connectReader, readerConnected, readerState, catchUp, downloadSourceMedia, sourceMessageMediaKind } from "./telegram-reader";
 import { botApi, botState, testBot, TelegramApiError, AmbiguousSendError } from "./telegram-bot";
-import { compose, createSendPlan, isBotTestMessage, savedPlanDisposition } from "./composition";
+import { compose, createSendPlan, isBotTestMessage, savedPlanDisposition, savedPlanNeedsLinkRefresh, CURRENT_LINK_POLICY_VERSION } from "./composition";
 import { refreshPrices } from "./market";
 import { logger } from "./logger";
 import { resolveWorkerHealth, type WorkerHeartbeat } from "./worker-health";
@@ -15,7 +15,7 @@ let interval: ReturnType<typeof setInterval> | undefined;
 let lastReaderCheck = 0, lastCatchUp = 0, lastBotCheck = 0;
 let blockedUntil = 0;
 export const workerState = { status: "stopped", detail: "عامل المعالجة متوقف", checkedAt: null as string | null };
-type Part = { method: "sendMessage" | "sendPhoto" | "sendVideo" | "sendMedia"; text: string; html?: string; hideSourceLink?: boolean; removeLinks?: boolean; preserveConfiguredLinks?: boolean; contentSettingsHash?: string };
+type Part = { method: "sendMessage" | "sendPhoto" | "sendVideo" | "sendMedia"; text: string; html?: string; hideSourceLink?: boolean; removeLinks?: boolean; linkPolicyVersion?: number; contentSettingsHash?: string };
 
 export async function getWorkerHealth() {
   const [enabled, heartbeat] = await Promise.all([
@@ -96,11 +96,11 @@ async function processDelivery(id: number) {
     if (plan?.length && (
       Boolean(plan[0]?.hideSourceLink) !== hideSourceLink ||
       Boolean(plan[0]?.removeLinks) !== removeLinks ||
-      (removeLinks && plan.some((part) => part.preserveConfiguredLinks !== true)) ||
+      (removeLinks && plan.some((part) => savedPlanNeedsLinkRefresh(true, part.linkPolicyVersion))) ||
       plan.some((part) => part.contentSettingsHash !== contentSettingsHash)
     )) {
       if (sentIds.length) {
-        const reason = "تغير إعداد معالجة روابط المصدر بعد إرسال جزء من الرسالة؛ أُوقف الاستكمال لتجنب اختلاف المحتوى";
+        const reason = "تغيرت معالجة الروابط بعد إرسال جزء من الرسالة؛ أُوقف الاستكمال لتجنب ظهور رابط أو تكرار محتوى";
         await pool.query("UPDATE message_deliveries SET status='held',error=$2,updated_at=now() WHERE id=$1", [id, reason]);
         await pool.query("INSERT INTO delivery_attempts(delivery_id,status,detail) VALUES($1,'held',$2)", [id, reason]);
         return;
@@ -132,7 +132,7 @@ async function processDelivery(id: number) {
         await audit("warning", "delivery", `لا يوجد محتوى مفعّل للمسار من ${source.username} إلى ${destination.username}؛ تم تجاوز الرسالة دون إرسال نص فارغ`);
         return;
       }
-      plan = plan.map((part) => ({ ...part, hideSourceLink, removeLinks, preserveConfiguredLinks: true, contentSettingsHash }));
+      plan = plan.map((part) => ({ ...part, hideSourceLink, removeLinks, linkPolicyVersion: CURRENT_LINK_POLICY_VERSION, contentSettingsHash }));
       await pool.query("UPDATE message_deliveries SET rendered_text=$2,send_plan=$3 WHERE id=$1", [id, composed.text, JSON.stringify(plan)]);
     }
     if (!plan.length) throw new Error("لا توجد رسالة نصية أو صورة قابلة للنشر");

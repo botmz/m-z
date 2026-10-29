@@ -1,6 +1,6 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { acceptsMessage, containsLink, sourceLink, splitText, originalHtml, escapeHtml, marketPriceLine, compose, createSendPlan, isBotTestMessage, savedPlanDisposition } from "../src/lib/composition";
+import { acceptsMessage, containsLink, sourceLink, splitText, originalHtml, escapeHtml, marketPriceLine, compose, createSendPlan, isBotTestMessage, savedPlanDisposition, savedPlanNeedsLinkRefresh } from "../src/lib/composition";
 import { removeSourceReferences, removeTextLinks } from "../src/lib/source-reference";
 import { direction } from "../src/lib/market";
 import { channelRow, normalizeUsername, sameTelegramUsername, pool, claimDelivery, type Channel } from "../src/lib/store";
@@ -237,10 +237,13 @@ test("route hide-source option runs before composition while disabled routes kee
   assert(!hidden.text.includes(source.name));
 });
 test("per-route link removal keeps adjacent text and suppresses link-only text without dropping media", async () => {
-  const destination: Channel = { ...source, id: -2, kind: "destination", username: "@destination", attachSource: false };
+  const destination: Channel = {
+    ...source, id: -2, kind: "destination", username: "@destination", attachSource: false,
+    signatureEnabled: true, suffix: "روابطنا\nhttps://mz-trading.blogspot.com/",
+  };
   const routeSettings = {
     showText: true, showImages: true, showVideos: true, showFiles: true,
-    showLinks: false, showMarketPrices: false, showSignature: false,
+    showLinks: false, showMarketPrices: false, showSignature: true,
   };
   const composed = await compose(
     { ...source, attachSource: false },
@@ -251,7 +254,7 @@ test("per-route link removal keeps adjacent text and suppresses link-only text w
     false,
     routeSettings,
   );
-  assert.equal(composed.text, "للتواصل:");
+  assert.equal(composed.text, "للتواصل:\n\nروابطنا");
   const keepLinks = await compose(
     { ...source, attachSource: false },
     destination,
@@ -261,10 +264,10 @@ test("per-route link removal keeps adjacent text and suppresses link-only text w
     false,
     { ...routeSettings, showLinks: true },
   );
-  assert.equal(keepLinks.text, "للتواصل: https://example.com/contact");
+  assert.equal(keepLinks.text, "للتواصل: https://example.com/contact\n\nروابطنا\nhttps://mz-trading.blogspot.com/");
   const linkOnly = await compose(
     { ...source, attachSource: false },
-    destination,
+    { ...destination, signatureEnabled: false, suffix: "" },
     "https://example.com/contact",
     undefined,
     [],
@@ -285,6 +288,12 @@ test("legacy saved plans are rebuilt unless a converted partial send needs revie
   assert.equal(savedPlanDisposition("translated", 0), "rebuild");
   assert.equal(savedPlanDisposition("translated", 1), "hold");
   assert.equal(savedPlanDisposition("not_requested", 0), "reuse");
+});
+test("queued plans refresh old link filtering before any signature URL can be resent", () => {
+  assert(savedPlanNeedsLinkRefresh(true, undefined));
+  assert(savedPlanNeedsLinkRefresh(true, 1));
+  assert(!savedPlanNeedsLinkRefresh(true, 2));
+  assert(!savedPlanNeedsLinkRefresh(false, undefined));
 });
 test("destination signature is appended only when enabled", async () => {
   const destination: Channel = {
@@ -353,7 +362,7 @@ test("route media switches allow each Telegram media kind independently", () => 
     showImages: false, showVideos: false, showFiles: false,
   })));
 });
-test("source link removal ignores legacy source additions and preserves destination signature", async () => {
+test("link removal preserves destination signature text without its URL", async () => {
   const composed = await compose(
     {
       ...source,
@@ -374,7 +383,8 @@ test("source link removal ignores legacy source additions and preserves destinat
     "خبر مهم https://t.me/unit_test/123",
   );
   assert(!composed.text.includes("https://t.me/unit_test/123"));
-  assert.equal((composed.text.match(/https:\/\/t\.me\/mz05999/g) ?? []).length, 1);
+  assert(!composed.text.includes("https://t.me/mz05999"));
+  assert(composed.text.includes("القناة الرسمية"));
   assert(composed.text.includes("خبر مهم"));
 });
 test("market price line omits provider and timestamp while retaining stale-price warning", () => {

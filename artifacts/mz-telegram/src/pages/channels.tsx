@@ -181,7 +181,7 @@ function ChannelForm({
               {routeSaveError && <div className="sm:col-span-2 rounded-md border border-danger/40 bg-danger/5 px-3 py-2 text-sm text-danger" role="alert" data-testid="text-route-save-error">{routeSaveError}</div>}
               <div className="sm:col-span-2">
                 <Toggle id="skip-links" label="حذف الروابط افتراضياً" checked={f.skipMessagesWithLinks} onChange={(v) => set('skipMessagesWithLinks', v)} />
-                <p className="mt-1 text-xs text-muted-foreground">هذه قيمة افتراضية للمسارات الجديدة؛ إعداد «حذف الروابط من الرسائل» المحفوظ لكل مسار له الأولوية. يبقى توقيع الوجهة كما ضبطته، وتبقى الكلمات المرتبطة برابط مخفي كنص عادي.</p>
+                <p className="mt-1 text-xs text-muted-foreground">هذه قيمة افتراضية للمسارات الجديدة؛ إعداد «حذف الروابط من الرسائل» المحفوظ لكل مسار له الأولوية. عند التفعيل تبقى عبارة التوقيع ويُحذف الرابط منها أيضاً.</p>
               </div>
               <Field label="نوع الرسائل"><Sel value={f.filter} onChange={(e) => set('filter', e.target.value as ChannelInput['filter'])} options={opts(filterLabels)} data-testid="select-filter" /></Field>
               <Field label="الوسائط"><Sel value={f.mediaMode} onChange={(e) => set('mediaMode', e.target.value as ChannelInput['mediaMode'])} options={opts(mediaLabels)} data-testid="select-media" /></Field>
