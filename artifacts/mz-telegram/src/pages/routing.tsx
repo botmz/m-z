@@ -31,10 +31,14 @@ const contentOptions: Array<[keyof RouteContentSettings, string]> = [
   ['showImages', 'إظهار الصور'],
   ['showVideos', 'إظهار الفيديوهات'],
   ['showFiles', 'إظهار الملفات'],
-  ['showLinks', 'إظهار الروابط'],
+  ['showLinks', 'حذف الروابط من الرسائل'],
   ['showMarketPrices', 'إظهار شريط الأسعار'],
   ['showSignature', 'إظهار التوقيع الثابت'],
 ];
+const optionEnabled = (settings: RouteContentSettings, field: keyof RouteContentSettings) =>
+  field === 'showLinks' ? !settings.showLinks : settings[field];
+const optionSettingValue = (field: keyof RouteContentSettings, enabled: boolean) =>
+  field === 'showLinks' ? !enabled : enabled;
 
 export default function RoutingPage() {
   const qc = useQueryClient();
@@ -241,8 +245,8 @@ export default function RoutingPage() {
                                     <label key={field} className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2 text-sm">
                                       <span>{label}</span>
                                       <Switch
-                                        checked={(content[route] ?? defaults(!s.skipMessagesWithLinks))[field]}
-                                        onCheckedChange={(value) => updateContent(route, field, value)}
+                                        checked={optionEnabled(content[route] ?? defaults(!s.skipMessagesWithLinks), field)}
+                                        onCheckedChange={(value) => updateContent(route, field, optionSettingValue(field, value))}
                                         data-testid={`switch-route-content-${field}-${s.id}-${d.id}`}
                                       />
                                     </label>

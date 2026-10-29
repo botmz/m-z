@@ -11,9 +11,14 @@ type MappedUnit = { value: string; origin: number };
 
 const attributionPrefix = /^\s*(?:المصدر(?:\s+الأصلي)?|source|تابعونا|تابعوا|تابع القناة|قناة المصدر|follow(?:\s+(?:us|the channel))?)\s*[:：–—-]?\s*/iu;
 const separator = /^[|•·–—\-,:،؛.!?؟]+$/u;
+const visibleUrlPattern = String.raw`(?<![\p{L}\p{N}_@])(?:(?:https?|ftp):\/\/|tg:\/\/|\/\/|www\.)[^\s<>"'()[\]{}]+|(?<![\p{L}\p{N}_@])(?:[\p{L}\p{N}](?:[\p{L}\p{N}-]{0,61}[\p{L}\p{N}])?\.)+[\p{L}]{2,}(?::\d{1,5})?(?:\/[^\s<>"'()[\]{}]*)?(?:\?[^\s<>"'()[\]{}]*)?(?:#[^\s<>"'()[\]{}]*)?`;
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export function containsVisibleUrl(text: string) {
+  return new RegExp(visibleUrlPattern, "iu").test(text);
 }
 
 function isSourceChannelUrl(value: string, username: string) {
@@ -262,7 +267,7 @@ export function removeTextLinks(
       Number.isInteger(entity.length)
     ) add(entity.offset, entity.offset + entity.length);
   }
-  const visibleUrl = /(?<![\p{L}\p{N}_])(?:(?:https?:\/\/|tg:\/\/)|www\.)[^\s<>"'()[\]{}]+|(?<![\p{L}\p{N}_])(?:t\.me|telegram\.me)\/[^\s<>"'()[\]{}]+/giu;
+  const visibleUrl = new RegExp(visibleUrlPattern, "giu");
   for (const match of text.matchAll(visibleUrl)) {
     const raw = match[0];
     let length = raw.length;

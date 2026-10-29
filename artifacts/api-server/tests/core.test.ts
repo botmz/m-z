@@ -66,8 +66,10 @@ test("bot connectivity test posts are skipped instead of being forwarded with ma
 test("source link-removal option keeps linked messages instead of skipping them", () => {
   const sourceWithLinkFilter = { ...source, skipMessagesWithLinks: true };
   assert(containsLink("Read https://example.com/report"));
+  assert(containsLink("Visit example.com/contact"));
   assert(containsLink("Open the link", [{ className: "MessageEntityTextUrl", url: "https://example.com" }]));
   assert(containsLink("example.com", [{ className: "MessageEntityUrl" }]));
+  assert(!containsLink("Email owner@example.com"));
   assert(!containsLink("BTC/USD reached 80,000"));
   assert(acceptsMessage(sourceWithLinkFilter, "Trade setup https://example.com", false));
   assert(acceptsMessage(sourceWithLinkFilter, "More information", false, [{ className: "MessageEntityTextUrl", url: "https://example.com" }]));
@@ -87,6 +89,10 @@ test("link cleanup removes visible URLs, keeps hidden-link words, and preserves 
     removeTextLinks("خبر عربي https://t.me/news/10، ثم https://example.com/a\nwww.example.org").text,
     "خبر عربي، ثم",
   );
+  assert.equal(
+    removeTextLinks("سعر 80,415$ ▼\n\nوصل الذهب للمقاومة\n\nللتواصل: https://example.com/contact\n\nnews.example.net\n//mirror.example.org").text,
+    "سعر 80,415$ ▼\n\nوصل الذهب للمقاومة\n\nللتواصل:",
+  );
   const hiddenText = "Read the report";
   const hidden = removeTextLinks(hiddenText, [
     { className: "MessageEntityTextUrl", offset: 9, length: 6, url: "https://hidden.example/report" },
@@ -100,6 +106,7 @@ test("link cleanup removes visible URLs, keeps hidden-link words, and preserves 
   ]);
   assert.equal(entityCleaned.text, "💰 visit now");
   assert.deepEqual(removeTextLinks("No URLs here", []).text, "No URLs here");
+  assert.equal(removeTextLinks("Email me at owner@example.com").text, "Email me at owner@example.com");
   assert.equal(removeTextLinks("https://only.example").text, "");
   assert(acceptsMessage(source, "", true), "media remains eligible when URL removal empties its caption");
   assert(!acceptsMessage(source, "", false), "an empty text-only post has no sendable content");
@@ -228,6 +235,45 @@ test("route hide-source option runs before composition while disabled routes kee
   assert(preserved.text.includes("https://t.me/unit_test/3"));
   assert(!hidden.text.includes("t.me/unit_test"));
   assert(!hidden.text.includes(source.name));
+});
+test("per-route link removal keeps adjacent text and suppresses link-only text without dropping media", async () => {
+  const destination: Channel = { ...source, id: -2, kind: "destination", username: "@destination", attachSource: false };
+  const routeSettings = {
+    showText: true, showImages: true, showVideos: true, showFiles: true,
+    showLinks: false, showMarketPrices: false, showSignature: false,
+  };
+  const composed = await compose(
+    { ...source, attachSource: false },
+    destination,
+    "للتواصل: https://example.com/contact",
+    undefined,
+    [],
+    false,
+    routeSettings,
+  );
+  assert.equal(composed.text, "للتواصل:");
+  const keepLinks = await compose(
+    { ...source, attachSource: false },
+    destination,
+    "للتواصل: https://example.com/contact",
+    undefined,
+    [],
+    false,
+    { ...routeSettings, showLinks: true },
+  );
+  assert.equal(keepLinks.text, "للتواصل: https://example.com/contact");
+  const linkOnly = await compose(
+    { ...source, attachSource: false },
+    destination,
+    "https://example.com/contact",
+    undefined,
+    [],
+    false,
+    routeSettings,
+  );
+  assert.equal(linkOnly.text, "");
+  assert.deepEqual(createSendPlan(linkOnly.text, linkOnly.html, false, false), []);
+  assert.deepEqual(createSendPlan(linkOnly.text, linkOnly.html, true, false), [{ method: "sendMedia", text: "" }]);
 });
 test("message composition passes through the original source text", async () => {
   const destination: Channel = { ...source, id: -2, kind: "destination", name: "Destination", format: "plain" };

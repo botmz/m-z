@@ -1,6 +1,6 @@
 import { marketQuotes } from "./market";
 import { settings, type Channel } from "./store";
-import { removeSourceReferences, removeTextLinks, type TelegramTextEntity } from "./source-reference";
+import { containsVisibleUrl, removeSourceReferences, removeTextLinks, type TelegramTextEntity } from "./source-reference";
 import { normalizeRouteContentSettings, type RouteContentSettings } from "./route-content";
 
 export const escapeHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -15,7 +15,7 @@ export function marketPriceLine(symbol: string, price: number, quoteDirection: s
 }
 export function containsLink(text: string, entities: Array<{ className?: string; url?: string }> = []) {
   if (entities.some((entity) => entity.className === "MessageEntityUrl" || entity.className === "MessageEntityTextUrl")) return true;
-  return /(?:\bhttps?:\/\/|\btg:\/\/|\bwww\.)[^\s<>"'،]+|\b(?:t\.me|telegram\.me)\/[^\s<>"'،]+/i.test(text);
+  return containsVisibleUrl(text);
 }
 export function isBotTestMessage(text: string) {
   const normalized = text.normalize("NFKC").toLocaleLowerCase().replace(/\s+/g, " ");
