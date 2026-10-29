@@ -61,6 +61,7 @@ export const GetDashboardResponse = zod.object({
   "telegramStatus": zod.string(),
   "sources": zod.number().int(),
   "destinations": zod.number().int(),
+  "routingRules": zod.number().int(),
   "processedToday": zod.number().int(),
   "sentToday": zod.number().int(),
   "failed": zod.number().int(),
@@ -307,7 +308,7 @@ export const TestChannelParams = zod.object({
 })
 
 export const TestChannelBody = zod.object({
-  "send": zod.boolean().describe('Explicit confirmation to send a test message')
+  "send": zod.boolean().describe('Retained for compatibility; destination checks never send test messages')
 })
 
 export const TestChannelResponse = zod.object({

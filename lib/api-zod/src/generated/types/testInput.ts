@@ -6,6 +6,6 @@
  */
 
 export interface TestInput {
-  /** Explicit confirmation to send a test message */
+  /** Retained for compatibility; destination checks never send test messages */
   send: boolean;
 }

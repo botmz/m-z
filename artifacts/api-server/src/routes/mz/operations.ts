@@ -26,7 +26,7 @@ operationsRouter.use(createTelegramQrRouter({
 operationsRouter.get("/dashboard", async (_req, res) => {
   const config = await settings();
   const workerHealth = await getWorkerHealth();
-  const [list, recentMessages, recentLogs, counts, activity] = await Promise.all([
+  const [list, recentMessages, recentLogs, counts, activity, routingRules] = await Promise.all([
     channels(), messageHistory(), logs(), pool.query(`SELECT
       (SELECT count(*) FROM messages WHERE (created_at AT TIME ZONE $1)::date=(now() AT TIME ZONE $1)::date)::int AS processed,
       count(*) FILTER (WHERE status='sent' AND (updated_at AT TIME ZONE $1)::date=(now() AT TIME ZONE $1)::date)::int AS sent,
@@ -38,12 +38,14 @@ operationsRouter.get("/dashboard", async (_req, res) => {
       FROM generate_series(date_trunc('hour',now())-interval '23 hours',date_trunc('hour',now()),interval '1 hour') h(hour)
       LEFT JOIN message_deliveries d ON d.updated_at>=h.hour AND d.updated_at<h.hour+interval '1 hour'
       GROUP BY h.hour ORDER BY h.hour`, [config.timezone]),
+    pool.query("SELECT count(*)::int AS count FROM routing_rules"),
   ]);
   const row = counts.rows[0];
   res.json(GetDashboardResponse.parse({
     workerStatus: workerHealth.status, telegramStatus: readerStatus(),
     sources: list.filter(c => c.kind === "source" && c.enabled).length,
     destinations: list.filter(c => c.kind === "destination" && c.enabled).length,
+    routingRules: routingRules.rows[0].count,
     processedToday: row.processed, sentToday: row.sent, failed: row.failed, pending: row.pending,
     recentMessages: recentMessages.slice(0, 6), recentLogs: recentLogs.slice(0, 5), activity: activity.rows,
   }));

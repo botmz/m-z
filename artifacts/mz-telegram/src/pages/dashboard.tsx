@@ -1,5 +1,5 @@
 import { Link } from 'wouter';
-import { RefreshCw, Inbox, ScrollText, AlertTriangle } from 'lucide-react';
+import { RefreshCw, Inbox, ScrollText, AlertTriangle, GitFork } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { getGetDashboardQueryKey, useGetDashboard } from '@workspace/api-client-react';
 import { Button } from '@/components/ui/button';
@@ -41,6 +41,16 @@ export default function Dashboard() {
               <div>
                 <p className="font-semibold">توقفت نبضات عامل المعالجة</p>
                 <p className="mt-1">لم تصل نبضة حديثة خلال المهلة المحددة. تحقّق من خدمة العامل قبل الاعتماد على تحويل الرسائل.</p>
+              </div>
+            </div>
+          )}
+          {d.sources > 0 && d.destinations > 0 && d.routingRules === 0 && (
+            <div role="alert" className="flex items-start gap-3 rounded-lg border border-warn/40 bg-warn/10 p-4 text-sm text-warn" data-testid="alert-no-routing">
+              <GitFork className="mt-0.5 size-4 shrink-0" />
+              <div>
+                <p className="font-semibold">القنوات جاهزة، لكن لا توجد قواعد توجيه محفوظة</p>
+                <p className="mt-1">لن تُرسل الرسائل تلقائياً حتى تختار وجهة لكل مصدر.</p>
+                <Link href="/routing" className="mt-2 inline-flex font-semibold underline underline-offset-2 hover:text-foreground" data-testid="link-configure-routing">إعداد التوجيه</Link>
               </div>
             </div>
           )}

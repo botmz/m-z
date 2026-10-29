@@ -142,7 +142,7 @@ export type Channel = ChannelInput & ({
 });
 
 export interface TestInput {
-  /** Explicit confirmation to send a test message */
+  /** Retained for compatibility; destination checks never send test messages */
   send: boolean;
 }
 
@@ -225,6 +225,7 @@ export interface Dashboard {
   telegramStatus: string;
   sources: number;
   destinations: number;
+  routingRules: number;
   processedToday: number;
   sentToday: number;
   failed: number;

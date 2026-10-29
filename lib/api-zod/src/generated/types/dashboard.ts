@@ -13,6 +13,7 @@ export interface Dashboard {
   telegramStatus: string;
   sources: number;
   destinations: number;
+  routingRules: number;
   processedToday: number;
   sentToday: number;
   failed: number;

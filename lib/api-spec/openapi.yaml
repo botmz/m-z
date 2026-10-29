@@ -499,12 +499,13 @@ components:
         createdAt: { type: string }
     Dashboard:
       type: object
-      required: [workerStatus, telegramStatus, sources, destinations, processedToday, sentToday, failed, pending, recentMessages, recentLogs, activity]
+      required: [workerStatus, telegramStatus, sources, destinations, routingRules, processedToday, sentToday, failed, pending, recentMessages, recentLogs, activity]
       properties:
         workerStatus: { type: string }
         telegramStatus: { type: string }
         sources: { type: integer }
         destinations: { type: integer }
+        routingRules: { type: integer }
         processedToday: { type: integer }
         sentToday: { type: integer }
         failed: { type: integer }

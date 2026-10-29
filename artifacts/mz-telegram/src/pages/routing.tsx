@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { GitFork, RotateCcw, Save } from 'lucide-react';
 import {
-  getGetChannelsQueryKey, getGetRoutingQueryKey, useGetChannels, useGetRouting, useSaveChannelRouting,
+  getGetChannelsQueryKey, getGetDashboardQueryKey, getGetRoutingQueryKey, useGetChannels, useGetRouting, useSaveChannelRouting,
 } from '@workspace/api-client-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -141,6 +141,7 @@ export default function RoutingPage() {
       setBaseHide(new Set(hide));
       setBaseContent(content);
       await qc.invalidateQueries({ queryKey: getGetRoutingQueryKey() });
+      await qc.invalidateQueries({ queryKey: getGetDashboardQueryKey() });
       reportResult({ ok: true, message: 'تم حفظ تغييرات المصادر المحددة فقط' });
     } catch (e) {
       reportError(e);
