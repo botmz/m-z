@@ -19,10 +19,6 @@ const errorHandler: ErrorRequestHandler = (error, req, res, _next) => {
   if (error instanceof ZodError || error?.name === "ZodError") {
     res.status(400).json({ error: "البيانات غير مكتملة أو غير صالحة؛ راجع الحقول المطلوبة" }); return;
   }
-  if (error?.translationHeld) {
-    req.log.warn({ message: safeError(error) }, "Translation provider unavailable");
-    res.status(503).json({ error: safeError(error) }); return;
-  }
   if (error?.code === "23505") { res.status(409).json({ error: "القناة أو قاعدة الربط موجودة بالفعل" }); return; }
   const status = typeof error?.status === "number" && error.status >= 400 && error.status < 500 ? error.status : 500;
   req.log.error({ message: safeError(error) }, "MZ API error");

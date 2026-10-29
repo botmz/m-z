@@ -25,16 +25,13 @@ export const defaultChannel = (kind: 'source' | 'destination'): ChannelInput => 
   name: '',
   username: '',
   enabled: true,
-  translate: false,
   skipMessagesWithLinks: false,
-  targetLanguage: 'ar',
   attachSource: false,
   signatureEnabled: false,
   prefix: '',
   suffix: '',
   filter: 'all',
   mediaMode: 'include',
-  translationFailure: 'hold',
   marketEnabled: false,
   showGold: true,
   showBitcoin: true,
@@ -65,7 +62,6 @@ const LABELS: Record<string, [string, Tone]> = {
   healthy: ['سليم', 'good'],
   sent: ['تم الإرسال', 'good'],
   success: ['نجاح', 'good'],
-  translated: ['تمت الترجمة', 'good'],
   failed: ['فشل', 'bad'],
   error: ['خطأ', 'bad'],
   stale: ['نبضة قديمة', 'bad'],
@@ -100,9 +96,6 @@ const LABELS: Record<string, [string, Tone]> = {
   processing: ['قيد المعالجة', 'warn'],
   sending: ['جارٍ الإرسال', 'warn'],
   standby: ['عامل احتياطي', 'neutral'],
-  not_requested: ['غير مطلوبة', 'neutral'],
-  fallback_original: ['النص الأصلي بعد تعذر الترجمة', 'warn'],
-  not_required: ['غير مطلوبة', 'neutral'],
 };
 
 export function statusInfo(s: string): { label: string; tone: Tone } {
@@ -143,7 +136,6 @@ export function fmtDate(iso: string | null | undefined, tz?: string): string {
 
 export const filterLabels = { all: 'كل الرسائل', text: 'النصوص فقط', recommendations: 'التوصيات فقط' };
 export const mediaLabels = { include: 'تضمين الوسائط', textOnly: 'النص فقط' };
-export const failureLabels = { original: 'إرسال النص الأصلي', hold: 'احتجاز الرسالة' };
 export const orderLabels = { goldFirst: 'الذهب أولاً', bitcoinFirst: 'البتكوين أولاً' };
 export const staleLabels = { hide: 'إخفاء الأسعار القديمة', lastKnown: 'عرض آخر سعر معروف' };
 export const formatLabels = { plain: 'نص عادي', html: 'HTML' };

@@ -105,7 +105,7 @@ export default function LoginPage() {
           <p className="max-w-md text-2xl font-bold leading-relaxed">من المصدر إلى القناة، كل رسالة مسجلة وكل حالة حقيقية.</p>
           <ul className="space-y-2 text-sm text-sidebar-foreground/70">
             <li>مصادر ووجهات يحددها المالك لكل مصدر</li>
-            <li>ترجمة إلى العربية وأسعار الذهب والبتكوين</li>
+            <li>تصفية الروابط وأسعار الذهب والبتكوين</li>
             <li>سجل كامل لمحاولات الإرسال وإعادة المحاولة</li>
           </ul>
         </div>

@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'wouter';
 import { useQueryClient } from '@tanstack/react-query';
 import {
-  Activity, Download, Eye, GitFork, Languages, LayoutDashboard, LogOut, Menu, MessageSquare, Moon,
+  Activity, Download, Eye, GitFork, LayoutDashboard, LogOut, Menu, MessageSquare, Moon,
   ScrollText, Send, Settings as Cog, Sun, TrendingUp,
 } from 'lucide-react';
 import { getGetAuthQueryKey, useLogout } from '@workspace/api-client-react';
@@ -21,7 +21,6 @@ const NAV = [
   { href: '/messages', label: 'الرسائل', icon: MessageSquare },
   { href: '/logs', label: 'السجلات', icon: ScrollText },
   { href: '/market', label: 'أسعار السوق', icon: TrendingUp },
-  { href: '/translation', label: 'الترجمة', icon: Languages },
   { href: '/preview', label: 'معاينة الرسالة', icon: Eye },
   { href: '/services', label: 'الخدمات وتيليجرام', icon: Activity },
   { href: '/settings', label: 'الإعدادات والأمان', icon: Cog },

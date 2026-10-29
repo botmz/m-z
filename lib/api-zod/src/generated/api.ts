@@ -73,7 +73,6 @@ export const GetDashboardResponse = zod.object({
   "destinationName": zod.string(),
   "status": zod.string(),
   "attempts": zod.number().int(),
-  "translationStatus": zod.string(),
   "error": zod.string().nullish(),
   "createdAt": zod.string()
 })),
@@ -97,7 +96,6 @@ export const getChannelsResponseOneNameMax = 120;
 export const getChannelsResponseOneUsernameMin = 3;
 export const getChannelsResponseOneUsernameMax = 200;
 
-export const getChannelsResponseOneTargetLanguageDefault = `ar`;
 export const getChannelsResponseOnePrefixMax = 1000;
 
 export const getChannelsResponseOneSuffixMax = 1000;
@@ -109,16 +107,13 @@ export const GetChannelsResponseItem = zod.object({
   "name": zod.string().min(1).max(getChannelsResponseOneNameMax),
   "username": zod.string().min(getChannelsResponseOneUsernameMin).max(getChannelsResponseOneUsernameMax),
   "enabled": zod.boolean(),
-  "translate": zod.boolean(),
   "skipMessagesWithLinks": zod.boolean().describe('Remove links from the source message while preserving other text and media'),
-  "targetLanguage": zod.string().default(getChannelsResponseOneTargetLanguageDefault),
   "attachSource": zod.boolean(),
   "signatureEnabled": zod.boolean().describe('Append the destination\'s fixed message after the source content'),
   "prefix": zod.string().max(getChannelsResponseOnePrefixMax),
   "suffix": zod.string().max(getChannelsResponseOneSuffixMax),
   "filter": zod.enum(['all', 'text', 'recommendations']),
   "mediaMode": zod.enum(['include', 'textOnly']),
-  "translationFailure": zod.enum(['original', 'hold']),
   "marketEnabled": zod.boolean(),
   "showGold": zod.boolean(),
   "showBitcoin": zod.boolean(),
@@ -140,7 +135,6 @@ export const createChannelBodyNameMax = 120;
 export const createChannelBodyUsernameMin = 3;
 export const createChannelBodyUsernameMax = 200;
 
-export const createChannelBodyTargetLanguageDefault = `ar`;
 export const createChannelBodyPrefixMax = 1000;
 
 export const createChannelBodySuffixMax = 1000;
@@ -152,16 +146,13 @@ export const CreateChannelBody = zod.object({
   "name": zod.string().min(1).max(createChannelBodyNameMax),
   "username": zod.string().min(createChannelBodyUsernameMin).max(createChannelBodyUsernameMax),
   "enabled": zod.boolean(),
-  "translate": zod.boolean(),
   "skipMessagesWithLinks": zod.boolean().describe('Remove links from the source message while preserving other text and media'),
-  "targetLanguage": zod.string().default(createChannelBodyTargetLanguageDefault),
   "attachSource": zod.boolean(),
   "signatureEnabled": zod.boolean().describe('Append the destination\'s fixed message after the source content'),
   "prefix": zod.string().max(createChannelBodyPrefixMax),
   "suffix": zod.string().max(createChannelBodySuffixMax),
   "filter": zod.enum(['all', 'text', 'recommendations']),
   "mediaMode": zod.enum(['include', 'textOnly']),
-  "translationFailure": zod.enum(['original', 'hold']),
   "marketEnabled": zod.boolean(),
   "showGold": zod.boolean(),
   "showBitcoin": zod.boolean(),
@@ -175,7 +166,6 @@ export const createChannelResponseOneNameMax = 120;
 export const createChannelResponseOneUsernameMin = 3;
 export const createChannelResponseOneUsernameMax = 200;
 
-export const createChannelResponseOneTargetLanguageDefault = `ar`;
 export const createChannelResponseOnePrefixMax = 1000;
 
 export const createChannelResponseOneSuffixMax = 1000;
@@ -187,16 +177,13 @@ export const CreateChannelResponse = zod.object({
   "name": zod.string().min(1).max(createChannelResponseOneNameMax),
   "username": zod.string().min(createChannelResponseOneUsernameMin).max(createChannelResponseOneUsernameMax),
   "enabled": zod.boolean(),
-  "translate": zod.boolean(),
   "skipMessagesWithLinks": zod.boolean().describe('Remove links from the source message while preserving other text and media'),
-  "targetLanguage": zod.string().default(createChannelResponseOneTargetLanguageDefault),
   "attachSource": zod.boolean(),
   "signatureEnabled": zod.boolean().describe('Append the destination\'s fixed message after the source content'),
   "prefix": zod.string().max(createChannelResponseOnePrefixMax),
   "suffix": zod.string().max(createChannelResponseOneSuffixMax),
   "filter": zod.enum(['all', 'text', 'recommendations']),
   "mediaMode": zod.enum(['include', 'textOnly']),
-  "translationFailure": zod.enum(['original', 'hold']),
   "marketEnabled": zod.boolean(),
   "showGold": zod.boolean(),
   "showBitcoin": zod.boolean(),
@@ -221,7 +208,6 @@ export const updateChannelBodyNameMax = 120;
 export const updateChannelBodyUsernameMin = 3;
 export const updateChannelBodyUsernameMax = 200;
 
-export const updateChannelBodyTargetLanguageDefault = `ar`;
 export const updateChannelBodyPrefixMax = 1000;
 
 export const updateChannelBodySuffixMax = 1000;
@@ -233,16 +219,13 @@ export const UpdateChannelBody = zod.object({
   "name": zod.string().min(1).max(updateChannelBodyNameMax),
   "username": zod.string().min(updateChannelBodyUsernameMin).max(updateChannelBodyUsernameMax),
   "enabled": zod.boolean(),
-  "translate": zod.boolean(),
   "skipMessagesWithLinks": zod.boolean().describe('Remove links from the source message while preserving other text and media'),
-  "targetLanguage": zod.string().default(updateChannelBodyTargetLanguageDefault),
   "attachSource": zod.boolean(),
   "signatureEnabled": zod.boolean().describe('Append the destination\'s fixed message after the source content'),
   "prefix": zod.string().max(updateChannelBodyPrefixMax),
   "suffix": zod.string().max(updateChannelBodySuffixMax),
   "filter": zod.enum(['all', 'text', 'recommendations']),
   "mediaMode": zod.enum(['include', 'textOnly']),
-  "translationFailure": zod.enum(['original', 'hold']),
   "marketEnabled": zod.boolean(),
   "showGold": zod.boolean(),
   "showBitcoin": zod.boolean(),
@@ -256,7 +239,6 @@ export const updateChannelResponseOneNameMax = 120;
 export const updateChannelResponseOneUsernameMin = 3;
 export const updateChannelResponseOneUsernameMax = 200;
 
-export const updateChannelResponseOneTargetLanguageDefault = `ar`;
 export const updateChannelResponseOnePrefixMax = 1000;
 
 export const updateChannelResponseOneSuffixMax = 1000;
@@ -268,16 +250,13 @@ export const UpdateChannelResponse = zod.object({
   "name": zod.string().min(1).max(updateChannelResponseOneNameMax),
   "username": zod.string().min(updateChannelResponseOneUsernameMin).max(updateChannelResponseOneUsernameMax),
   "enabled": zod.boolean(),
-  "translate": zod.boolean(),
   "skipMessagesWithLinks": zod.boolean().describe('Remove links from the source message while preserving other text and media'),
-  "targetLanguage": zod.string().default(updateChannelResponseOneTargetLanguageDefault),
   "attachSource": zod.boolean(),
   "signatureEnabled": zod.boolean().describe('Append the destination\'s fixed message after the source content'),
   "prefix": zod.string().max(updateChannelResponseOnePrefixMax),
   "suffix": zod.string().max(updateChannelResponseOneSuffixMax),
   "filter": zod.enum(['all', 'text', 'recommendations']),
   "mediaMode": zod.enum(['include', 'textOnly']),
-  "translationFailure": zod.enum(['original', 'hold']),
   "marketEnabled": zod.boolean(),
   "showGold": zod.boolean(),
   "showBitcoin": zod.boolean(),
@@ -408,7 +387,6 @@ export const GetMessagesResponseItem = zod.object({
   "destinationName": zod.string(),
   "status": zod.string(),
   "attempts": zod.number().int(),
-  "translationStatus": zod.string(),
   "error": zod.string().nullish(),
   "createdAt": zod.string()
 })
@@ -445,8 +423,6 @@ export const getSettingsResponseMarketIntervalMax = 86400;
 
 export const getSettingsResponseMarketStaleMinutesMax = 1440;
 
-export const getSettingsResponseTranslationModelMax = 100;
-
 export const getSettingsResponseTimezoneDefault = `Asia/Jerusalem`;
 export const getSettingsResponseMaxAttemptsMax = 10;
 
@@ -455,8 +431,6 @@ export const getSettingsResponseMaxAttemptsMax = 10;
 export const GetSettingsResponse = zod.object({
   "marketInterval": zod.number().int().min(getSettingsResponseMarketIntervalMin).max(getSettingsResponseMarketIntervalMax),
   "marketStaleMinutes": zod.number().int().min(1).max(getSettingsResponseMarketStaleMinutesMax),
-  "translationProvider": zod.enum(['disabled', 'replit', 'deepl', 'gemini', 'openai']),
-  "translationModel": zod.string().max(getSettingsResponseTranslationModelMax),
   "timezone": zod.string().default(getSettingsResponseTimezoneDefault),
   "maxAttempts": zod.number().int().min(1).max(getSettingsResponseMaxAttemptsMax)
 })
@@ -467,8 +441,6 @@ export const saveSettingsBodyMarketIntervalMax = 86400;
 
 export const saveSettingsBodyMarketStaleMinutesMax = 1440;
 
-export const saveSettingsBodyTranslationModelMax = 100;
-
 export const saveSettingsBodyTimezoneDefault = `Asia/Jerusalem`;
 export const saveSettingsBodyMaxAttemptsMax = 10;
 
@@ -477,8 +449,6 @@ export const saveSettingsBodyMaxAttemptsMax = 10;
 export const SaveSettingsBody = zod.object({
   "marketInterval": zod.number().int().min(saveSettingsBodyMarketIntervalMin).max(saveSettingsBodyMarketIntervalMax),
   "marketStaleMinutes": zod.number().int().min(1).max(saveSettingsBodyMarketStaleMinutesMax),
-  "translationProvider": zod.enum(['disabled', 'replit', 'deepl', 'gemini', 'openai']),
-  "translationModel": zod.string().max(saveSettingsBodyTranslationModelMax),
   "timezone": zod.string().default(saveSettingsBodyTimezoneDefault),
   "maxAttempts": zod.number().int().min(1).max(saveSettingsBodyMaxAttemptsMax)
 })
@@ -488,8 +458,6 @@ export const saveSettingsResponseMarketIntervalMax = 86400;
 
 export const saveSettingsResponseMarketStaleMinutesMax = 1440;
 
-export const saveSettingsResponseTranslationModelMax = 100;
-
 export const saveSettingsResponseTimezoneDefault = `Asia/Jerusalem`;
 export const saveSettingsResponseMaxAttemptsMax = 10;
 
@@ -498,29 +466,8 @@ export const saveSettingsResponseMaxAttemptsMax = 10;
 export const SaveSettingsResponse = zod.object({
   "marketInterval": zod.number().int().min(saveSettingsResponseMarketIntervalMin).max(saveSettingsResponseMarketIntervalMax),
   "marketStaleMinutes": zod.number().int().min(1).max(saveSettingsResponseMarketStaleMinutesMax),
-  "translationProvider": zod.enum(['disabled', 'replit', 'deepl', 'gemini', 'openai']),
-  "translationModel": zod.string().max(saveSettingsResponseTranslationModelMax),
   "timezone": zod.string().default(saveSettingsResponseTimezoneDefault),
   "maxAttempts": zod.number().int().min(1).max(saveSettingsResponseMaxAttemptsMax)
-})
-
-
-export const testTranslationBodyModelMax = 100;
-
-
-
-export const TestTranslationBody = zod.object({
-  "provider": zod.enum(['replit', 'deepl', 'gemini', 'openai']),
-  "model": zod.string().min(1).max(testTranslationBodyModelMax)
-})
-
-export const TestTranslationResponse = zod.object({
-  "ok": zod.boolean(),
-  "provider": zod.enum(['replit', 'deepl', 'gemini', 'openai']),
-  "model": zod.string(),
-  "checkedAt": zod.coerce.date(),
-  "message": zod.string(),
-  "translatedText": zod.string()
 })
 
 
@@ -574,7 +521,6 @@ export const PreviewMessageBody = zod.object({
 
 export const PreviewMessageResponse = zod.object({
   "text": zod.string(),
-  "translationStatus": zod.string(),
   "warnings": zod.array(zod.string())
 })
 

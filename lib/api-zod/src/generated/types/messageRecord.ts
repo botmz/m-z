@@ -12,7 +12,6 @@ export interface MessageRecord {
   destinationName: string;
   status: string;
   attempts: number;
-  translationStatus: string;
   /** @nullable */
   error?: string | null;
   createdAt: string;

@@ -42,9 +42,7 @@ import type {
   Settings,
   SourceRoutingInput,
   TelegramQrPasswordInput,
-  TestInput,
-  TranslationTestInput,
-  TranslationTestResponse
+  TestInput
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -1517,88 +1515,6 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getSaveSettingsMutationOptions(options));
-    }
-
-export const getTestTranslationUrl = () => {
-
-
-
-
-  return `/api/mz/translation/test`
-}
-
-export const testTranslation = async (translationTestInput: TranslationTestInput, options?: Parameters<typeof customFetch>[1]): Promise<TranslationTestResponse> => {
-
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-return customFetch<TranslationTestResponse>(getTestTranslationUrl(),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(translationTestInput)
-  }
-);}
-
-
-
-
-
-export const getTestTranslationMutationKey = () => ['testTranslation'] as const;
-
-export const getTestTranslationMutationOptions = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof testTranslation>>, TError,TestTranslationMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof testTranslation>>, TError,TestTranslationMutationVariables, TContext> => {
-
-const mutationKey = getTestTranslationMutationKey();
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof testTranslation>>, TestTranslationMutationVariables> = (props) => {
-          const {data} = props ?? {};
-
-          return  testTranslation(data,requestOptions)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type TestTranslationMutationResult = NonNullable<Awaited<ReturnType<typeof testTranslation>>>
-    export type TestTranslationMutationBody = BodyType<TranslationTestInput>
-    export type TestTranslationMutationError = ErrorType<unknown>
-    export type TestTranslationMutationVariables = {data: BodyType<TranslationTestInput>}
-
-    export const useTestTranslation = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof testTranslation>>, TError,TestTranslationMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
- ): UseMutationResult<
-        Awaited<ReturnType<typeof testTranslation>>,
-        TError,
-        TestTranslationMutationVariables,
-        TContext
-      > => {
-      return useMutation(getTestTranslationMutationOptions(options));
     }
 
 export const getGetMarketUrl = () => {

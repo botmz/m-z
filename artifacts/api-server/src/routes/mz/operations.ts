@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import {
   GetDashboardResponse, GetMessagesQueryParams, GetMessagesResponse, GetLogsQueryParams, GetLogsResponse,
-  RetryMessageParams, SaveSettingsBody, GetSettingsResponse, GetMarketResponse, TestTranslationBody, TestTranslationResponse,
+  RetryMessageParams, SaveSettingsBody, GetSettingsResponse, GetMarketResponse,
   SendPreviewMessageBody, SendPreviewMessageResponse, ControlWorkerBody, PreviewMessageBody, PreviewMessageResponse, GetServicesResponse,
 } from "@workspace/api-zod";
 import { pool, channels, channel, messageHistory, logs, settings, setSetting, getSetting, audit, safeError } from "../../lib/store";
@@ -12,10 +12,6 @@ import { marketQuotes, refreshPrices } from "../../lib/market";
 import { compose } from "../../lib/composition";
 import { normalizeRouteContentSettings } from "../../lib/route-content";
 import { sendManualMessage } from "../../lib/telegram-manual-send";
-import {
-  GEMINI_FREE_MODELS, testTranslationProvider, translationServiceState,
-  type TranslationTestRecord, type TranslationProvider,
-} from "../../lib/translation";
 import { createTelegramQrRouter } from "./telegram-qr";
 
 export const operationsRouter: IRouter = Router();
@@ -69,37 +65,11 @@ operationsRouter.get("/logs", async (req, res) => {
 });
 operationsRouter.get("/settings", async (_req, res) => { res.json(GetSettingsResponse.parse(await settings())); });
 operationsRouter.put("/settings", async (req, res) => {
-  const parsed = SaveSettingsBody.parse(req.body);
-  const input = { ...parsed, translationModel: parsed.translationModel.trim() };
+  const input = SaveSettingsBody.parse(req.body);
   try { new Intl.DateTimeFormat("ar", { timeZone: input.timezone }); }
   catch { res.status(400).json({ error: "المنطقة الزمنية غير صالحة" }); return; }
-  if (input.translationProvider === "deepl" && !process.env.DEEPL_API_KEY) {
-    res.status(400).json({ error: "أضف DEEPL_API_KEY إلى الأسرار قبل تفعيل DeepL" }); return;
-  }
-  if (input.translationProvider === "replit" && !process.env.AI_INTEGRATIONS_OPENAI_BASE_URL) {
-    res.status(400).json({ error: "خدمة Replit AI غير مُعدّة" }); return;
-  }
-  if (input.translationProvider === "replit" && !input.translationModel.trim()) {
-    res.status(400).json({ error: "حدد نموذجاً صالحاً للترجمة" }); return;
-  }
-  if (input.translationProvider === "gemini" && !process.env.GEMINI_API_KEY) {
-    res.status(400).json({ error: "أضف GEMINI_API_KEY إلى الأسرار قبل تفعيل Gemini" }); return;
-  }
-  if (input.translationProvider === "gemini" && !GEMINI_FREE_MODELS.includes(input.translationModel as typeof GEMINI_FREE_MODELS[number])) {
-    res.status(400).json({ error: `استخدم أحد النماذج المجانية المدعومة: ${GEMINI_FREE_MODELS.join(" أو ")}` }); return;
-  }
-  if (input.translationProvider === "openai" && !process.env.OPENAI_API_KEY) {
-    res.status(400).json({ error: "أضف OPENAI_API_KEY إلى أسرار Replit؛ لا يستخدم OpenAI قبل ضبط المفتاح واختبار الاتصال" }); return;
-  }
-  const current = await settings();
-  const translationChanged = current.translationProvider !== input.translationProvider || current.translationModel !== input.translationModel;
-  if (translationChanged && input.translationProvider !== "disabled") {
-    const verified = await getSetting<TranslationTestRecord | null>("translation_test", null);
-    if (!verified?.ok || verified.provider !== input.translationProvider || verified.model !== input.translationModel.trim()) {
-      res.status(400).json({ error: "اختبر المزود والنموذج المحددين بنجاح قبل حفظهما أو تفعيلهما" }); return;
-    }
-  }
-  await setSetting("settings", input);
+  const storedSettings = await getSetting<Record<string, unknown>>("settings", {});
+  await setSetting("settings", { ...storedSettings, ...input });
   await audit("info", "settings", "تم تحديث الإعدادات العامة");
   res.json(GetSettingsResponse.parse(input));
 });
@@ -119,7 +89,7 @@ operationsRouter.post("/preview", async (req, res) => {
   const routes = await pool.query(`SELECT hide_source_link,content_settings FROM routing_rules
     WHERE source_id=$1 AND destination_id=$2`, [source.id, -destination.id]);
   const routeContent = normalizeRouteContentSettings(routes.rows[0]?.content_settings, !source.skipMessagesWithLinks);
-  const preview = await compose(source, destination, input.text, undefined, [], Boolean(routes.rows[0]?.hide_source_link), undefined, routeContent);
+  const preview = await compose(source, destination, input.text, undefined, [], Boolean(routes.rows[0]?.hide_source_link), routeContent);
   if (!preview.text.trim()) preview.warnings.push("لا تحتوي معاينة النص على محتوى؛ قد يُرسل وسيط فقط إذا كان مسموحاً في هذا المسار.");
   if (!routes.rows.length) preview.warnings.push("لا يوجد توجيه تلقائي محفوظ بين المصدر والوجهة؛ الإرسال اليدوي من هذه الصفحة يرسل هذه الرسالة فقط.");
   res.json(PreviewMessageResponse.parse(preview));
@@ -145,7 +115,7 @@ operationsRouter.post("/preview/send", async (req, res): Promise<void> => {
 
   const route = await pool.query("SELECT hide_source_link,content_settings FROM routing_rules WHERE source_id=$1 AND destination_id=$2", [source.id, -destination.id]);
   const routeContent = normalizeRouteContentSettings(route.rows[0]?.content_settings, !source.skipMessagesWithLinks);
-  const composed = await compose(source, destination, input.text, undefined, [], Boolean(route.rows[0]?.hide_source_link), undefined, routeContent);
+  const composed = await compose(source, destination, input.text, undefined, [], Boolean(route.rows[0]?.hide_source_link), routeContent);
   if (!composed.text.trim()) {
     res.status(400).json({ error: "لا يوجد محتوى مفعّل لهذا المسار؛ فعّل النص أو الأسعار أو التوقيع قبل الإرسال." });
     return;
@@ -166,19 +136,6 @@ operationsRouter.post("/preview/send", async (req, res): Promise<void> => {
 operationsRouter.get("/services", async (_req, res) => {
   await pool.query("SELECT 1");
   const workerHealth = await getWorkerHealth();
-  const config = await settings();
-  const translationTest = await getSetting<TranslationTestRecord | null>("translation_test", null);
-  const translationCredentialMissing = config.translationProvider === "gemini" ? !process.env.GEMINI_API_KEY
-    : config.translationProvider === "openai" ? !process.env.OPENAI_API_KEY
-    : config.translationProvider === "deepl" ? !process.env.DEEPL_API_KEY
-    : config.translationProvider === "replit" ? !process.env.AI_INTEGRATIONS_OPENAI_BASE_URL
-    : false;
-  const translationService = translationServiceState(
-    config.translationProvider,
-    config.translationModel,
-    translationTest,
-    translationCredentialMissing,
-  );
   const market = await marketQuotes();
   const marketError = await getSetting("market_error", "");
   res.json(GetServicesResponse.parse([
@@ -188,15 +145,6 @@ operationsRouter.get("/services", async (_req, res) => {
     { id: "worker", name: "عامل المعالجة", ...workerHealth },
     { id: "market", name: "مزود أسعار السوق", status: marketError ? "error" : market.length === 2 && market.every(p => !p.stale) ? "connected" : "unverified",
       detail: marketError || "Coinbase للبيتكوين • Gold API للذهب • المقارنة بآخر قراءة ناجحة", checkedAt: market[0]?.updatedAt ?? null },
-    { id: "translation", name: "خدمة الترجمة", ...translationService },
   ]));
-});
-operationsRouter.post("/translation/test", async (req, res) => {
-  const input = TestTranslationBody.parse(req.body);
-  const result = await testTranslationProvider(input.provider as TranslationProvider, input.model.trim());
-  await audit(result.ok ? "info" : "warning", "translation", result.ok
-    ? "نجح اختبار الترجمة الفعلي."
-    : "فشل اختبار الترجمة الفعلي؛ راجع الرسالة الآمنة في صفحة الترجمة.");
-  res.json(TestTranslationResponse.parse(result));
 });
 operationsRouter.post("/telegram/qr", async (_req, res) => { res.json(await beginQr()); });

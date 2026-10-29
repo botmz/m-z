@@ -233,20 +233,6 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Settings' }
-  /mz/translation/test:
-    post:
-      operationId: testTranslation
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/TranslationTestInput' }
-      responses:
-        '200':
-          description: Actual provider translation test; errors are returned without secrets
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/TranslationTestResponse' }
   /mz/market:
     get:
       operationId: getMarket
@@ -382,22 +368,19 @@ components:
         message: { type: string }
     ChannelInput:
       type: object
-      required: [kind, name, username, enabled, translate, skipMessagesWithLinks, targetLanguage, attachSource, signatureEnabled, prefix, suffix, filter, mediaMode, translationFailure, marketEnabled, showGold, showBitcoin, marketOrder, stalePolicy, format]
+      required: [kind, name, username, enabled, skipMessagesWithLinks, attachSource, signatureEnabled, prefix, suffix, filter, mediaMode, marketEnabled, showGold, showBitcoin, marketOrder, stalePolicy, format]
       properties:
         kind: { type: string, enum: [source, destination] }
         name: { type: string, minLength: 1, maxLength: 120 }
         username: { type: string, minLength: 3, maxLength: 200 }
         enabled: { type: boolean }
-        translate: { type: boolean }
         skipMessagesWithLinks: { type: boolean, description: Remove links from the source message while preserving other text and media }
-        targetLanguage: { type: string, default: ar }
         attachSource: { type: boolean }
         signatureEnabled: { type: boolean, description: Append the destination's fixed message after the source content }
         prefix: { type: string, maxLength: 1000 }
         suffix: { type: string, maxLength: 1000 }
         filter: { type: string, enum: [all, text, recommendations] }
         mediaMode: { type: string, enum: [include, textOnly] }
-        translationFailure: { type: string, enum: [original, hold] }
         marketEnabled: { type: boolean }
         showGold: { type: boolean }
         showBitcoin: { type: boolean }
@@ -477,7 +460,7 @@ components:
           items: { $ref: '#/components/schemas/RouteSettingsInput' }
     MessageRecord:
       type: object
-      required: [id, text, sourceName, destinationName, status, attempts, translationStatus, createdAt]
+      required: [id, text, sourceName, destinationName, status, attempts, createdAt]
       properties:
         id: { type: integer }
         text: { type: string }
@@ -485,7 +468,6 @@ components:
         destinationName: { type: string }
         status: { type: string }
         attempts: { type: integer }
-        translationStatus: { type: string }
         error: { type: [string, 'null'] }
         createdAt: { type: string }
     LogEntry:
@@ -528,30 +510,12 @@ components:
         failed: { type: integer }
     Settings:
       type: object
-      required: [marketInterval, marketStaleMinutes, translationProvider, translationModel, timezone, maxAttempts]
+      required: [marketInterval, marketStaleMinutes, timezone, maxAttempts]
       properties:
         marketInterval: { type: integer, minimum: 60, maximum: 86400 }
         marketStaleMinutes: { type: integer, minimum: 1, maximum: 1440 }
-        translationProvider: { type: string, enum: [disabled, replit, deepl, gemini, openai] }
-        translationModel: { type: string, maxLength: 100 }
         timezone: { type: string, default: Asia/Jerusalem }
         maxAttempts: { type: integer, minimum: 1, maximum: 10 }
-    TranslationTestInput:
-      type: object
-      required: [provider, model]
-      properties:
-        provider: { type: string, enum: [replit, deepl, gemini, openai] }
-        model: { type: string, minLength: 1, maxLength: 100 }
-    TranslationTestResponse:
-      type: object
-      required: [ok, provider, model, checkedAt, message, translatedText]
-      properties:
-        ok: { type: boolean }
-        provider: { type: string, enum: [replit, deepl, gemini, openai] }
-        model: { type: string }
-        checkedAt: { type: string, format: date-time }
-        message: { type: string }
-        translatedText: { type: string }
     MarketQuote:
       type: object
       required: [symbol, price, previousPrice, direction, provider, updatedAt, stale]
@@ -586,10 +550,9 @@ components:
         text: { type: string, minLength: 1, maxLength: 4096 }
     PreviewResult:
       type: object
-      required: [text, translationStatus, warnings]
+      required: [text, warnings]
       properties:
         text: { type: string }
-        translationStatus: { type: string }
         warnings:
           type: array
           items: { type: string }

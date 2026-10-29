@@ -8,7 +8,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Empty, ErrorBox, PageHeader, Panel, RowsSkeleton, Sel, StatusBadge } from '@/components/mz-ui';
-import { reportError, reportResult, statusInfo } from '@/lib/mz';
+import { reportError, reportResult } from '@/lib/mz';
 import { useFmt } from '@/lib/use-fmt';
 
 const STATUSES: [string, string][] = [['', 'كل الحالات'], ['sent', 'تم الإرسال'], ['skipped', 'تم التجاهل'], ['failed', 'فشل'], ['pending', 'قيد الانتظار'], ['held', 'محتجزة'], ['retrying', 'إعادة محاولة تلقائية'], ['processing', 'قيد المعالجة'], ['sending', 'جارٍ الإرسال'], ['unknown', 'إرسال غير مؤكد']];
@@ -65,7 +65,6 @@ export default function MessagesPage() {
                 <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                   <StatusBadge status={m.status} />
                   <span className="font-semibold text-foreground">{m.sourceName} ← {m.destinationName}</span>
-                  <span>الترجمة: {statusInfo(m.translationStatus).label}</span>
                   <span>المحاولات: <span className="num">{m.attempts}</span></span>
                   <span className="ms-auto">{fmt(m.createdAt)}</span>
                 </div>

@@ -6,7 +6,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Empty, ErrorBox, Field, PageHeader, Panel, RowsSkeleton, Sel } from '@/components/mz-ui';
-import { reportError, reportResult, statusInfo } from '@/lib/mz';
+import { reportError, reportResult } from '@/lib/mz';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -79,7 +79,6 @@ export default function PreviewPage() {
               <Empty icon={Eye} title="لا توجد معاينة بعد" desc="أدخل نصاً واضغط معاينة." />
             ) : (
               <div className="space-y-3" data-testid="preview-result">
-                <div className="text-xs text-muted-foreground">حالة الترجمة: <span className="font-bold text-foreground">{statusInfo(res.translationStatus).label}</span></div>
                 <div className="whitespace-pre-wrap break-words rounded-lg border border-gold/40 bg-gold/5 p-4 text-sm leading-7" data-testid="text-preview">{res.text}</div>
                 {res.warnings.length > 0 && (
                   <ul className="space-y-1" data-testid="list-warnings">

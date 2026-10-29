@@ -7,6 +7,5 @@
 
 export interface PreviewResult {
   text: string;
-  translationStatus: string;
   warnings: string[];
 }

@@ -1,4 +1,3 @@
-import { needsTranslation, translate } from "./translation";
 import { marketQuotes } from "./market";
 import { settings, type Channel } from "./store";
 import { removeSourceReferences, removeTextLinks, type TelegramTextEntity } from "./source-reference";
@@ -63,7 +62,6 @@ export async function compose(
   messageId?: number,
   entities: TelegramTextEntity[] = [],
   hideSourceLink = false,
-  translator: typeof translate = translate,
   routeSettings?: Partial<RouteContentSettings>,
   marketQuotesProvider: typeof marketQuotes = marketQuotes,
 ) {
@@ -74,13 +72,7 @@ export async function compose(
   const cleanedBody = content.showLinks
     ? sourceCleanedBody
     : removeTextLinks(sourceCleanedBody.text, sourceCleanedBody.entities);
-  const translated = cleanedBody.text.trim()
-    ? source.translate && needsTranslation(cleanedBody.text, source.targetLanguage)
-      ? await translator(cleanedBody.text, source)
-      : { text: cleanedBody.text, status: source.translate ? "not_required" : "not_requested" }
-    : { text: "", status: "not_requested" };
   const warnings: string[] = [];
-  if (translated.warning) warnings.push(translated.warning);
   const prefix: string[] = [];
   if (!source.enabled || !destination.enabled) warnings.push("القناة معطلة؛ المعاينة لا تعني السماح بالإرسال");
   if (destination.marketEnabled && content.showMarketPrices) {
@@ -100,17 +92,15 @@ export async function compose(
     suffix.push(destination.suffix.trim());
   }
   const channelUrl = sourceLink(source.username);
-  const existingText = [...prefix, translated.text, ...suffix].join("\n").toLowerCase();
+  const existingText = [...prefix, cleanedBody.text, ...suffix].join("\n").toLowerCase();
   if (content.showText && content.showLinks && source.attachSource && !hideSourceLink && !existingText.includes(channelUrl.toLowerCase())) {
     suffix.push(`المصدر: ${source.name}\n${sourceLink(source.username, messageId)}`);
   }
-  const renderedText = [...prefix, translated.text, ...suffix].filter(Boolean).join("\n\n");
-  const bodyHtml = translated.status === "translated"
-    ? escapeHtml(translated.text)
-    : originalHtml(cleanedBody.text, cleanedBody.entities);
+  const renderedText = [...prefix, cleanedBody.text, ...suffix].filter(Boolean).join("\n\n");
+  const bodyHtml = originalHtml(cleanedBody.text, cleanedBody.entities);
   const html = [...prefix.map(escapeHtml), bodyHtml, ...suffix.map(escapeHtml)].filter(Boolean).join("\n\n");
   if (renderedText.length > 4096) warnings.push("سيُقسم النص إلى عدة رسائل بسبب حدود Telegram؛ التنسيق الطويل سيستخدم النص العادي");
-  return { text: renderedText, html, translationStatus: translated.status, warnings };
+  return { text: renderedText, html, warnings };
 }
 export function splitText(text: string, max = 4000): string[] {
   const chunks: string[] = [];
@@ -126,6 +116,11 @@ export function splitText(text: string, max = 4000): string[] {
 }
 
 export type ComposedPart = { method: "sendMessage" | "sendMedia"; text: string; html?: string };
+export function savedPlanDisposition(savedStatus: string, sentPartCount: number): "reuse" | "rebuild" | "hold" {
+  if (savedStatus !== "translated") return "reuse";
+  return sentPartCount > 0 ? "hold" : "rebuild";
+}
+
 export function createSendPlan(text: string, html: string, hasMedia: boolean, useHtml: boolean): ComposedPart[] {
   const plan: ComposedPart[] = [];
   if (hasMedia && text.length <= 1024) {

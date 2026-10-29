@@ -15,7 +15,6 @@ import RoutingPage from '@/pages/routing';
 import MessagesPage from '@/pages/messages';
 import LogsPage from '@/pages/logs';
 import MarketPage from '@/pages/market';
-import TranslationPage from '@/pages/translation';
 import SettingsPage from '@/pages/settings';
 import PreviewPage from '@/pages/preview';
 import ServicesPage from '@/pages/services';
@@ -68,7 +67,6 @@ const RoutingRoute = guard(RoutingPage);
 const MessagesRoute = guard(MessagesPage);
 const LogsRoute = guard(LogsPage);
 const MarketRoute = guard(MarketPage);
-const TranslationRoute = guard(TranslationPage);
 const SettingsRoute = guard(SettingsPage);
 const PreviewRoute = guard(PreviewPage);
 const ServicesRoute = guard(ServicesPage);
@@ -86,7 +84,6 @@ function Router() {
         <Route path="/messages" component={MessagesRoute} />
         <Route path="/logs" component={LogsRoute} />
         <Route path="/market" component={MarketRoute} />
-        <Route path="/translation" component={TranslationRoute} />
         <Route path="/settings" component={SettingsRoute} />
         <Route path="/preview" component={PreviewRoute} />
         <Route path="/services" component={ServicesRoute} />

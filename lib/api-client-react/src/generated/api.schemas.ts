@@ -64,14 +64,6 @@ export const ChannelInputMediaMode = {
   textOnly: 'textOnly',
 } as const;
 
-export type ChannelInputTranslationFailure = typeof ChannelInputTranslationFailure[keyof typeof ChannelInputTranslationFailure];
-
-
-export const ChannelInputTranslationFailure = {
-  original: 'original',
-  hold: 'hold',
-} as const;
-
 export type ChannelInputMarketOrder = typeof ChannelInputMarketOrder[keyof typeof ChannelInputMarketOrder];
 
 
@@ -109,10 +101,8 @@ export interface ChannelInput {
      */
   username: string;
   enabled: boolean;
-  translate: boolean;
   /** Remove links from the source message while preserving other text and media */
   skipMessagesWithLinks: boolean;
-  targetLanguage: string;
   attachSource: boolean;
   /** Append the destination's fixed message after the source content */
   signatureEnabled: boolean;
@@ -122,7 +112,6 @@ export interface ChannelInput {
   suffix: string;
   filter: ChannelInputFilter;
   mediaMode: ChannelInputMediaMode;
-  translationFailure: ChannelInputTranslationFailure;
   marketEnabled: boolean;
   showGold: boolean;
   showBitcoin: boolean;
@@ -200,7 +189,6 @@ export interface MessageRecord {
   destinationName: string;
   status: string;
   attempts: number;
-  translationStatus: string;
   /** @nullable */
   error?: string | null;
   createdAt: string;
@@ -235,17 +223,6 @@ export interface Dashboard {
   activity: ActivityPoint[];
 }
 
-export type SettingsTranslationProvider = typeof SettingsTranslationProvider[keyof typeof SettingsTranslationProvider];
-
-
-export const SettingsTranslationProvider = {
-  disabled: 'disabled',
-  replit: 'replit',
-  deepl: 'deepl',
-  gemini: 'gemini',
-  openai: 'openai',
-} as const;
-
 export interface Settings {
   /**
      * @minimum 60
@@ -257,53 +234,12 @@ export interface Settings {
      * @maximum 1440
      */
   marketStaleMinutes: number;
-  translationProvider: SettingsTranslationProvider;
-  /** @maxLength 100 */
-  translationModel: string;
   timezone: string;
   /**
      * @minimum 1
      * @maximum 10
      */
   maxAttempts: number;
-}
-
-export type TranslationTestInputProvider = typeof TranslationTestInputProvider[keyof typeof TranslationTestInputProvider];
-
-
-export const TranslationTestInputProvider = {
-  replit: 'replit',
-  deepl: 'deepl',
-  gemini: 'gemini',
-  openai: 'openai',
-} as const;
-
-export interface TranslationTestInput {
-  provider: TranslationTestInputProvider;
-  /**
-     * @minLength 1
-     * @maxLength 100
-     */
-  model: string;
-}
-
-export type TranslationTestResponseProvider = typeof TranslationTestResponseProvider[keyof typeof TranslationTestResponseProvider];
-
-
-export const TranslationTestResponseProvider = {
-  replit: 'replit',
-  deepl: 'deepl',
-  gemini: 'gemini',
-  openai: 'openai',
-} as const;
-
-export interface TranslationTestResponse {
-  ok: boolean;
-  provider: TranslationTestResponseProvider;
-  model: string;
-  checkedAt: string;
-  message: string;
-  translatedText: string;
 }
 
 export type MarketQuoteDirection = typeof MarketQuoteDirection[keyof typeof MarketQuoteDirection];
@@ -361,7 +297,6 @@ export interface PreviewInput {
 
 export interface PreviewResult {
   text: string;
-  translationStatus: string;
   warnings: string[];
 }
 

@@ -14,29 +14,26 @@ export const channelRouter: IRouter = Router();
 channelRouter.get("/channels", async (_req, res) => { res.json(GetChannelsResponse.parse(await channels())); });
 channelRouter.post("/channels", async (req, res) => {
   const input = CreateChannelBody.parse(req.body);
-  const persisted = input.kind === "source" && input.translate ? { ...input, translationFailure: "hold" as const } : input;
   const username = normalizeUsername(input.username);
-  if (!/^[a-z]{2}(?:-[A-Za-z]{2,4})?$/.test(input.targetLanguage)) throw Object.assign(new Error("رمز لغة غير صالح"), { status: 400 });
   const table = input.kind === "source" ? "source_channels" : "destination_channels";
   const { rows } = await pool.query(`INSERT INTO ${table}(name,username,enabled,config) VALUES($1,$2,$3,$4) RETURNING *`,
-    [input.name, username, input.enabled, JSON.stringify({ ...persisted, username })]);
+    [input.name, username, input.enabled, JSON.stringify({ ...input, username })]);
   await audit("info", "channels", `أضيفت قناة ${input.kind === "source" ? "مصدر" : "مستقبلة"} ${username}؛ لم تُختبر صلاحياتها بعد`);
   res.status(201).json(CreateChannelResponse.parse(channelRow(rows[0], input.kind)));
 });
 channelRouter.put("/channels/:id", async (req, res) => {
   const { id } = UpdateChannelParams.parse(req.params);
   const input = UpdateChannelBody.parse(req.body);
-  const persisted = input.kind === "source" && input.translate ? { ...input, translationFailure: "hold" as const } : input;
   const existing = await channel(id);
   if (input.kind !== existing.kind) { res.status(400).json({ error: "لا يمكن تغيير نوع القناة" }); return; }
-  if (!/^[a-z]{2}(?:-[A-Za-z]{2,4})?$/.test(input.targetLanguage)) throw Object.assign(new Error("رمز لغة غير صالح"), { status: 400 });
   const username = normalizeUsername(input.username);
   const changed = username !== existing.username;
   const table = input.kind === "source" ? "source_channels" : "destination_channels";
+  const savedConfig = await pool.query(`SELECT config FROM ${table} WHERE id=$1`, [Math.abs(id)]);
   const { rows } = await pool.query(`UPDATE ${table} SET name=$2,username=$3,enabled=$4,config=$5,
     status=CASE WHEN $6 THEN 'unverified' ELSE status END,last_error=CASE WHEN $6 THEN NULL ELSE last_error END
     ${input.kind === "source" ? ",last_message_id=CASE WHEN $6 THEN NULL ELSE last_message_id END" : ""}
-    WHERE id=$1 RETURNING *`, [Math.abs(id), input.name, username, input.enabled, JSON.stringify({ ...persisted, username }), changed]);
+    WHERE id=$1 RETURNING *`, [Math.abs(id), input.name, username, input.enabled, JSON.stringify({ ...savedConfig.rows[0]?.config, ...input, username }), changed]);
   await audit("info", "channels", `تم تحديث إعدادات ${username}${input.enabled ? "" : " وإيقافها مؤقتاً"}`);
   res.json(UpdateChannelResponse.parse(channelRow(rows[0], input.kind)));
 });

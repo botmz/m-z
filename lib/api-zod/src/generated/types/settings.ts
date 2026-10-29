@@ -4,7 +4,6 @@
  * Api
  * OpenAPI spec version: 1.0.0
  */
-import type { SettingsTranslationProvider } from './settingsTranslationProvider';
 
 export interface Settings {
   /**
@@ -17,9 +16,6 @@ export interface Settings {
      * @maximum 1440
      */
   marketStaleMinutes: number;
-  translationProvider: SettingsTranslationProvider;
-  /** @maxLength 100 */
-  translationModel: string;
   timezone: string;
   /**
      * @minimum 1

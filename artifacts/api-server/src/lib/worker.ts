@@ -1,8 +1,7 @@
 import { pool, getSetting, setSetting, settings, audit, safeError, channel, sameTelegramUsername, claimDelivery } from "./store";
 import { connectReader, readerConnected, readerState, catchUp, downloadSourceMedia, sourceMessageMediaKind } from "./telegram-reader";
 import { botApi, botState, testBot, TelegramApiError, AmbiguousSendError } from "./telegram-bot";
-import { compose, createSendPlan, isBotTestMessage } from "./composition";
-import { translate } from "./translation";
+import { compose, createSendPlan, isBotTestMessage, savedPlanDisposition } from "./composition";
 import { refreshPrices } from "./market";
 import { logger } from "./logger";
 import { resolveWorkerHealth, type WorkerHeartbeat } from "./worker-health";
@@ -83,6 +82,17 @@ async function processDelivery(id: number) {
     delivery.attempts += 1;
     await pool.query("INSERT INTO delivery_attempts(delivery_id,status,detail) VALUES($1,'processing',$2)", [id, `محاولة ${delivery.attempts}`]);
     let plan: Part[] | null = Array.isArray(delivery.send_plan) ? delivery.send_plan : null;
+    if (plan?.length) {
+      const disposition = savedPlanDisposition(delivery.translation_status, sentIds.length);
+      if (disposition === "hold") {
+        const reason = "تحتوي خطة قديمة أُرسل جزء منها على نص محوّل؛ أُوقف الاستكمال لمنع إرسال محتوى مختلف أو مكرر.";
+        await pool.query("UPDATE message_deliveries SET status='held',error=$2,updated_at=now() WHERE id=$1", [id, reason]);
+        await pool.query("INSERT INTO delivery_attempts(delivery_id,status,detail) VALUES($1,'held',$2)", [id, reason]);
+        await audit("warning", "delivery", reason);
+        return;
+      }
+      if (disposition === "rebuild") plan = null;
+    }
     if (plan?.length && (
       Boolean(plan[0]?.hideSourceLink) !== hideSourceLink ||
       Boolean(plan[0]?.removeLinks) !== removeLinks ||
@@ -105,7 +115,6 @@ async function processDelivery(id: number) {
         delivery.telegram_message_id,
         delivery.entities,
         hideSourceLink,
-        (text, sourceChannel) => translate(text, sourceChannel, delivery.message_id),
         routeContent,
       );
       let mediaKind = delivery.media_kind ?? "none";
@@ -124,7 +133,7 @@ async function processDelivery(id: number) {
         return;
       }
       plan = plan.map((part) => ({ ...part, hideSourceLink, removeLinks, preserveConfiguredLinks: true, contentSettingsHash }));
-      await pool.query("UPDATE message_deliveries SET rendered_text=$2,translation_status=$3,send_plan=$4 WHERE id=$1", [id, composed.text, composed.translationStatus, JSON.stringify(plan)]);
+      await pool.query("UPDATE message_deliveries SET rendered_text=$2,send_plan=$3 WHERE id=$1", [id, composed.text, JSON.stringify(plan)]);
     }
     if (!plan.length) throw new Error("لا توجد رسالة نصية أو صورة قابلة للنشر");
     for (let index = sentIds.length; index < plan.length; index++) {
@@ -174,14 +183,14 @@ async function processDelivery(id: number) {
   } catch (e: any) {
     const ambiguous = e instanceof AmbiguousSendError || (attemptedSend && !(e instanceof TelegramApiError));
     const permanent = e instanceof TelegramApiError && [400, 401, 403, 404].includes(e.code);
-    const held = e.translationHeld || e.held;
+    const held = e.held;
     const status = ambiguous ? "unknown" : held ? "held" : permanent || delivery.attempts >= config.maxAttempts ? "failed" : "retrying";
     const floodDelay = e instanceof TelegramApiError ? e.retryAfter : typeof e.seconds === "number" ? e.seconds : 0;
     const delay = floodDelay > 0 ? floodDelay + 1 : Math.min(3600, 15 * 2 ** Math.max(0, delivery.attempts - 1));
     if (floodDelay > 0) blockedUntil = Date.now() + delay * 1000;
     const error = ambiguous ? "حالة إرسال غير مؤكدة؛ لا إعادة تلقائية لتجنب التكرار. راجع القناة وسجل معرّفات الرسائل قبل التدخل اليدوي." : safeError(e);
     await pool.query(`UPDATE message_deliveries SET status=$2,error=$3,next_attempt_at=now()+$4*interval '1 second',
-      translation_status=CASE WHEN $5 THEN 'failed' ELSE translation_status END,updated_at=now() WHERE id=$1`, [id, status, error, delay, Boolean(e.translationHeld)]);
+      updated_at=now() WHERE id=$1`, [id, status, error, delay]);
     await pool.query("INSERT INTO delivery_attempts(delivery_id,status,detail) VALUES($1,$2,$3)", [id, status, error]);
     await audit("error", "delivery", error);
   }

@@ -79,8 +79,6 @@ function ChannelForm({
       ...f,
       name: f.name.trim(),
       username: f.username.trim(),
-      targetLanguage: f.translate ? f.targetLanguage || 'ar' : f.targetLanguage || 'ar',
-      translationFailure: f.translate ? 'hold' as const : f.translationFailure,
     };
     const existing = editing ?? createdChannel;
     let channelSaved = false;
@@ -181,16 +179,10 @@ function ChannelForm({
                 )}
               </div>
               {routeSaveError && <div className="sm:col-span-2 rounded-md border border-danger/40 bg-danger/5 px-3 py-2 text-sm text-danger" role="alert" data-testid="text-route-save-error">{routeSaveError}</div>}
-              <div className="sm:col-span-2"><Toggle id="translate" label="ترجمة الرسائل إلى العربية" checked={f.translate} onChange={(v) => { set('translate', v); if (v) set('targetLanguage', 'ar'); }} /></div>
               <div className="sm:col-span-2">
                 <Toggle id="skip-links" label="إزالة الروابط من نص الرسالة" checked={f.skipMessagesWithLinks} onChange={(v) => set('skipMessagesWithLinks', v)} />
                 <p className="mt-1 text-xs text-muted-foreground">عند التفعيل تُحذف الروابط من نص الرسالة الواردة فقط؛ يبقى توقيع الوجهة كما ضبطته في إعداداتها. تبقى الكلمات المرتبطة برابط مخفي، وتُرسل بقية الرسالة أو الوسيط.</p>
               </div>
-              {f.translate && (
-                <Field label="عند فشل الترجمة" hint="تُعلّق الرسالة حتى لا يصل النص الأصلي إلى الوجهة.">
-                  <Sel value="hold" disabled options={opts({ hold: 'تعليق الرسالة' })} data-testid="select-failure" />
-                </Field>
-              )}
               <Field label="نوع الرسائل"><Sel value={f.filter} onChange={(e) => set('filter', e.target.value as ChannelInput['filter'])} options={opts(filterLabels)} data-testid="select-filter" /></Field>
               <Field label="الوسائط"><Sel value={f.mediaMode} onChange={(e) => set('mediaMode', e.target.value as ChannelInput['mediaMode'])} options={opts(mediaLabels)} data-testid="select-media" /></Field>
               <div className="sm:col-span-2"><Toggle id="attach" label="إرفاق اسم المصدر" checked={f.attachSource} onChange={(v) => set('attachSource', v)} /></div>
@@ -328,7 +320,7 @@ export default function ChannelsPage({ kind }: { kind: Kind }) {
     <>
       <PageHeader
         title={src ? 'المصادر' : 'الوجهات'}
-        desc={src ? 'القنوات التي تُقرأ منها الرسائل، مع خيارات الترجمة والتصفية.' : 'القنوات التي تُرسل إليها الرسائل، مع البادئة والخاتمة وأسعار السوق.'}
+        desc={src ? 'القنوات التي تُقرأ منها الرسائل، مع خيارات التصفية والروابط.' : 'القنوات التي تُرسل إليها الرسائل، مع البادئة والخاتمة وأسعار السوق.'}
         actions={<Button onClick={() => setForm({ open: true, ch: null })} data-testid="button-add-channel"><Plus /> {src ? 'إضافة مصدر' : 'إضافة وجهة'}</Button>}
       />
       <Panel flush>
@@ -344,7 +336,6 @@ export default function ChannelsPage({ kind }: { kind: Kind }) {
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-bold" data-testid={`text-name-${c.id}`}>{c.name}</span>
                     <StatusBadge status={c.status} />
-                    {src && c.translate && <span className="rounded-full border border-gold/40 bg-gold/10 px-2 py-0.5 text-[11px] font-semibold text-gold">ترجمة</span>}
                   </div>
                   <div className="num text-xs text-muted-foreground">{c.username}</div>
                   <div className="mt-1 text-[11px] text-muted-foreground">آخر رسالة: {fmt(c.lastMessageAt)}</div>

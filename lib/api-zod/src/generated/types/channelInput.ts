@@ -10,7 +10,6 @@ import type { ChannelInputKind } from './channelInputKind';
 import type { ChannelInputMarketOrder } from './channelInputMarketOrder';
 import type { ChannelInputMediaMode } from './channelInputMediaMode';
 import type { ChannelInputStalePolicy } from './channelInputStalePolicy';
-import type { ChannelInputTranslationFailure } from './channelInputTranslationFailure';
 
 export interface ChannelInput {
   kind: ChannelInputKind;
@@ -25,10 +24,8 @@ export interface ChannelInput {
      */
   username: string;
   enabled: boolean;
-  translate: boolean;
   /** Remove links from the source message while preserving other text and media */
   skipMessagesWithLinks: boolean;
-  targetLanguage: string;
   attachSource: boolean;
   /** Append the destination's fixed message after the source content */
   signatureEnabled: boolean;
@@ -38,7 +35,6 @@ export interface ChannelInput {
   suffix: string;
   filter: ChannelInputFilter;
   mediaMode: ChannelInputMediaMode;
-  translationFailure: ChannelInputTranslationFailure;
   marketEnabled: boolean;
   showGold: boolean;
   showBitcoin: boolean;

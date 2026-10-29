@@ -1,13 +1,9 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import {
-  GEMINI_FREE_MODEL, GEMINI_FREE_MODELS, geminiHttpError, protectTokens, requestGeminiTranslation,
-  requestOpenAITranslation, restoreTokens, translationServiceState, translate, isEnglishText, validateTranslation, needsTranslation,
-} from "../src/lib/translation";
-import { acceptsMessage, containsLink, sourceLink, splitText, originalHtml, escapeHtml, marketPriceLine, compose, createSendPlan, isBotTestMessage } from "../src/lib/composition";
+import { acceptsMessage, containsLink, sourceLink, splitText, originalHtml, escapeHtml, marketPriceLine, compose, createSendPlan, isBotTestMessage, savedPlanDisposition } from "../src/lib/composition";
 import { removeSourceReferences, removeTextLinks } from "../src/lib/source-reference";
 import { direction } from "../src/lib/market";
-import { channelRow, normalizeUsername, sameTelegramUsername, pool, getSetting, setSetting, settings, claimDelivery, type Channel } from "../src/lib/store";
+import { channelRow, normalizeUsername, sameTelegramUsername, pool, claimDelivery, type Channel } from "../src/lib/store";
 import { CreateChannelBody, SaveChannelRoutingBody } from "@workspace/api-zod";
 import { replaceSourceRouting } from "../src/lib/routing";
 import { ingest, isVideoDocument } from "../src/lib/telegram-reader";
@@ -17,131 +13,12 @@ import { Api } from "teleproto";
 
 const source: Channel = {
   id: 1, kind: "source", name: "Unit Test", username: "@unit_test", enabled: true,
-  translate: false, skipMessagesWithLinks: false, targetLanguage: "ar", attachSource: true, signatureEnabled: false, prefix: "", suffix: "",
-  filter: "all", mediaMode: "include", translationFailure: "hold",
+  skipMessagesWithLinks: false, attachSource: true, signatureEnabled: false, prefix: "", suffix: "",
+  filter: "all", mediaMode: "include",
   marketEnabled: false, showGold: true, showBitcoin: true, marketOrder: "goldFirst",
   stalePolicy: "hide", format: "plain", status: "unverified", lastError: null,
   lastMessageAt: null, createdAt: new Date().toISOString(),
 };
-test("financial numbers, assets, links and identifiers are restored unchanged", () => {
-  const text = "BUY BTC/USD 108,500.00 SL 107000.25 +2.5% https://example.org/x?a=12 @channel";
-  const { masked, tokens } = protectTokens(text);
-  assert.equal(restoreTokens(masked, tokens), text);
-  assert(!masked.includes("108,500.00"));
-  assert(!masked.includes("https://example.org"));
-});
-test("common uppercase trading words stay translatable while tickers remain protected", () => {
-  const { masked, tokens } = protectTokens("BUY BTC/USD");
-  assert(masked.startsWith("BUY "));
-  assert(!masked.includes("BTC/USD"));
-  assert.equal(restoreTokens(masked, tokens), "BUY BTC/USD");
-});
-test("rejects translation that removes an immutable token", () => {
-  const { masked, tokens } = protectTokens("BTC 4250");
-  assert.throws(() => restoreTokens(masked.replace("⟦MZ0⟧", ""), tokens));
-});
-test("rejects translation that duplicates an immutable token", () => {
-  const { masked, tokens } = protectTokens("BTC 4250");
-  assert.throws(() => restoreTokens(masked + "⟦MZ0⟧", tokens));
-});
-test("translation quality check accepts Arabic output and rejects unchanged or wrong-language text", () => {
-  validateTranslation("Gold price rose 2.5 percent.", "ارتفع سعر الذهب 2.5 بالمئة.", "ar");
-  assert.throws(
-    () => validateTranslation("Gold prices rose today.", "Gold prices rose today.", "en"),
-    /لم يؤكد الفحص/,
-  );
-  assert.throws(
-    () => validateTranslation("Gold prices rose today.", "Gold prices rose today, 2.5%.", "ar"),
-    /اللغة المستهدفة/,
-  );
-});
-test("Gemini free translation uses the fixed model and keeps its API key out of the URL", async () => {
-  let requestUrl = "";
-  let requestOptions: RequestInit | undefined;
-  const translated = await requestGeminiTranslation(
-    "⟦MZ0⟧ hello",
-    "Arabic",
-    "test-secret",
-    GEMINI_FREE_MODEL,
-    async (input, init) => {
-      requestUrl = String(input);
-      requestOptions = init;
-      return new Response(JSON.stringify({
-        candidates: [{ content: { parts: [{ text: "⟦MZ0⟧ مرحباً" }] } }],
-      }), { status: 200, headers: { "Content-Type": "application/json" } });
-    },
-  );
-  assert.equal(translated, "⟦MZ0⟧ مرحباً");
-  assert(requestUrl.endsWith(`/models/${GEMINI_FREE_MODEL}:generateContent`));
-  assert.equal(new URL(requestUrl).search, "");
-  const headers = new Headers(requestOptions?.headers);
-  assert.equal(headers.get("x-goog-api-key"), "test-secret");
-  const body = JSON.parse(String(requestOptions?.body));
-  assert.equal(body.contents[0].parts[0].text, "⟦MZ0⟧ hello");
-  assert.equal(body.generationConfig.temperature, undefined);
-  assert.equal(body.generationConfig.maxOutputTokens, 8192);
-});
-test("Gemini quota failures explain the free limit without exposing response content", async () => {
-  await assert.rejects(
-    requestGeminiTranslation("hello", "ar", "test-secret", GEMINI_FREE_MODEL, async () => new Response(
-      JSON.stringify({ error: { message: "provider response detail" } }),
-      { status: 429 },
-    )),
-    (error: unknown) => {
-      assert(error instanceof Error);
-      assert.match(error.message, /حدود الاستخدام/);
-      assert(!error.message.includes("provider response detail"));
-      assert(!error.message.includes("test-secret"));
-      return true;
-    },
-  );
-});
-test("Gemini free model choices are current and quota failures differ from request-rate limits", () => {
-  assert.deepEqual(GEMINI_FREE_MODELS, ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]);
-  assert.match(geminiHttpError(429, "per day free tier quota"), /حصة Gemini المجانية/);
-  assert.match(geminiHttpError(429, "requests per minute RPM"), /حد سرعة/);
-  assert.match(geminiHttpError(404), /غير متاح/);
-  assert.match(geminiHttpError(400, "API key not valid. Please pass a valid API key."), /GEMINI_API_KEY غير صالح/);
-  assert.match(geminiHttpError(400, "invalid request payload"), /صيغة الطلب/);
-  assert.match(geminiHttpError(403), /GEMINI_API_KEY/);
-});
-test("translation service is connected only after a successful matching live test", () => {
-  const valid = {
-    provider: "gemini" as const, model: GEMINI_FREE_MODEL, ok: true,
-    message: "نجح اختبار ترجمة حقيقي إلى العربية.", checkedAt: "2026-10-28T08:00:00.000Z",
-  };
-  assert.equal(translationServiceState("gemini", GEMINI_FREE_MODEL, null, false).status, "unverified");
-  assert.equal(translationServiceState("gemini", GEMINI_FREE_MODEL, { ...valid, ok: false }, false).status, "error");
-  assert.equal(translationServiceState("gemini", "gemini-3.1-flash-lite", valid, false).status, "unverified");
-  assert.equal(translationServiceState("gemini", GEMINI_FREE_MODEL, valid, false).status, "connected");
-  assert.equal(translationServiceState("gemini", GEMINI_FREE_MODEL, valid, true).status, "error");
-});
-test("OpenAI API translation keeps its key in the header and does not retry", async () => {
-  let requestUrl = "";
-  let requestOptions: RequestInit | undefined;
-  let calls = 0;
-  const translated = await requestOpenAITranslation(
-    "⟦MZ0⟧ hello",
-    "Arabic",
-    "test-secret",
-    "gpt-5-mini",
-    async (input, init) => {
-      calls++;
-      requestUrl = String(input);
-      requestOptions = init;
-      return new Response(JSON.stringify({ choices: [{ message: { content: "⟦MZ0⟧ مرحباً" } }] }), { status: 200 });
-    },
-  );
-  assert.equal(translated, "⟦MZ0⟧ مرحباً");
-  assert.equal(requestUrl, "https://api.openai.com/v1/chat/completions");
-  assert.equal(calls, 1);
-  const headers = new Headers(requestOptions?.headers);
-  assert.equal(headers.get("authorization"), "Bearer test-secret");
-  const body = JSON.parse(String(requestOptions?.body));
-  assert.equal(body.model, "gpt-5-mini");
-  assert.equal(body.generationConfig, undefined);
-  assert.equal(body.max_completion_tokens, 8192);
-});
 test("market direction uses only the previous successful reading", () => {
   assert.equal(direction(10, null), "neutral");
   assert.equal(direction(10, 10), "neutral");
@@ -228,52 +105,16 @@ test("link cleanup removes visible URLs, keeps hidden-link words, and preserves 
   assert(!acceptsMessage(source, "", false), "an empty text-only post has no sendable content");
   assert(acceptsMessage({ ...source, filter: "recommendations" }, "", true), "an empty link-stripped caption must not suppress attached media");
 });
-test("translation detects target-language text, translates other languages, and ignores ticker-only posts", async () => {
-  assert(isEnglishText("The price of gold rose sharply today."));
-  assert(isEnglishText("BUY BTC"));
-  assert(!isEnglishText("هذا نص عربي للاختبار"));
-  assert(!isEnglishText("El precio del oro subió esta mañana"));
-  assert(!isEnglishText("BTC/USD 90,000"));
-  assert(needsTranslation("El precio del oro subió esta mañana", "ar"));
-  assert(!needsTranslation("هذا نص عربي للاختبار", "ar"));
-  assert(!needsTranslation("BTC/USD 90,000", "ar"));
-  let calls = 0;
-  const translator = async (text: string) => {
-    calls++;
-    return { text: `ترجمة: ${text}`, status: "translated" };
-  };
+test("messages keep their source language while preserving route link settings", async () => {
   const destination: Channel = { ...source, id: -2, kind: "destination", username: "@destination", attachSource: false };
   const english = await compose(
-    { ...source, translate: true, skipMessagesWithLinks: true, attachSource: false },
+    { ...source, skipMessagesWithLinks: true, attachSource: false },
     destination,
     "Gold rose 2.5% https://example.com",
-    undefined,
-    [],
-    false,
-    translator,
   );
-  const arabic = await compose(
-    { ...source, translate: true, attachSource: false },
-    destination,
-    "ارتفع الذهب بنسبة 2.5%",
-    undefined,
-    [],
-    false,
-    translator,
-  );
-  const spanish = await compose(
-    { ...source, translate: true, attachSource: false },
-    destination,
-    "El precio del oro subió",
-    undefined,
-    [],
-    false,
-    translator,
-  );
-  assert.equal(english.text, "ترجمة: Gold rose 2.5%");
+  const arabic = await compose({ ...source, attachSource: false }, destination, "ارتفع الذهب بنسبة 2.5%");
+  assert.equal(english.text, "Gold rose 2.5%");
   assert.equal(arabic.text, "ارتفع الذهب بنسبة 2.5%");
-  assert.equal(spanish.text, "ترجمة: El precio del oro subió");
-  assert.equal(calls, 2);
 });
 test("recommendation filter matches Arabic and English but not unrelated text", () => {
   const s = { ...source, filter: "recommendations" as const };
@@ -296,17 +137,16 @@ test("video captions remain eligible and media-only plans still send the origina
   const cleaned = removeTextLinks("Gold rose 2.5% https://example.com");
   const destination: Channel = { ...source, id: -2, kind: "destination", username: "@destination", attachSource: false };
   const composed = await compose(
-    { ...source, translate: true, skipMessagesWithLinks: true, attachSource: false },
+    { ...source, skipMessagesWithLinks: true, attachSource: false },
     destination,
     cleaned.text,
     undefined,
     cleaned.entities,
     false,
-    async () => ({ text: "ارتفع الذهب 2.5%", status: "translated" }),
   );
-  assert.equal(composed.text, "ارتفع الذهب 2.5%");
+  assert.equal(composed.text, "Gold rose 2.5%");
   assert.deepEqual(createSendPlan(composed.text, composed.html, true, true), [
-    { method: "sendMedia", text: "ارتفع الذهب 2.5%", html: "ارتفع الذهب 2.5%" },
+    { method: "sendMedia", text: "Gold rose 2.5%", html: "Gold rose 2.5%" },
   ]);
   const longCaption = createSendPlan("x".repeat(1100), "x".repeat(1100), true, true);
   assert.equal(longCaption[0]?.method, "sendMedia");
@@ -389,19 +229,16 @@ test("route hide-source option runs before composition while disabled routes kee
   assert(!hidden.text.includes("t.me/unit_test"));
   assert(!hidden.text.includes(source.name));
 });
-test("a successful provider translation is the body sent by message composition", async () => {
+test("message composition passes through the original source text", async () => {
   const destination: Channel = { ...source, id: -2, kind: "destination", name: "Destination", format: "plain" };
-  const translated = await compose(
-    { ...source, translate: true, attachSource: false },
-    destination,
-    "Gold price rose 2.5 percent.",
-    undefined,
-    [],
-    false,
-    async () => ({ text: "ارتفع سعر الذهب 2.5 بالمئة.", status: "translated" }),
-  );
-  assert.equal(translated.text, "ارتفع سعر الذهب 2.5 بالمئة.");
-  assert.equal(translated.translationStatus, "translated");
+  const composed = await compose({ ...source, attachSource: false }, destination, "Gold price rose 2.5 percent.");
+  assert.equal(composed.text, "Gold price rose 2.5 percent.");
+  assert.deepEqual(Object.keys(composed).sort(), ["html", "text", "warnings"]);
+});
+test("legacy saved plans are rebuilt unless a converted partial send needs review", () => {
+  assert.equal(savedPlanDisposition("translated", 0), "rebuild");
+  assert.equal(savedPlanDisposition("translated", 1), "hold");
+  assert.equal(savedPlanDisposition("not_requested", 0), "reuse");
 });
 test("destination signature is appended only when enabled", async () => {
   const destination: Channel = {
@@ -418,7 +255,6 @@ test("per-route controls can suppress source text and keep prices or signatures 
     showText: false, showImages: false, showVideos: false, showFiles: false,
     showLinks: false, showMarketPrices: false, showSignature: true,
   };
-  let translations = 0;
   const destination: Channel = {
     ...source, id: -2, kind: "destination", username: "@destination",
     attachSource: false, signatureEnabled: true, suffix: "تواصل: @owner",
@@ -431,12 +267,10 @@ test("per-route controls can suppress source text and keep prices or signatures 
       undefined,
       [],
       false,
-      async () => { translations++; return { text: "ترجمة غير مسموحة", status: "translated" }; },
       noSourceText,
     );
     assert.equal(composed.text, "تواصل: @owner");
   }
-  assert.equal(translations, 0, "hidden source text must not reach translation");
 
   const pricesOnly = await compose(
     source,
@@ -445,7 +279,6 @@ test("per-route controls can suppress source text and keep prices or signatures 
     undefined,
     [],
     false,
-    undefined,
     { ...noSourceText, showMarketPrices: true, showSignature: false },
     async () => [
       { symbol: "XAU/USD", price: 4041.7, previousPrice: 4040, direction: "up", provider: "test", updatedAt: new Date().toISOString(), stale: false },
@@ -456,7 +289,7 @@ test("per-route controls can suppress source text and keep prices or signatures 
   assert(pricesOnly.text.includes("BTC/USD"));
   assert(!pricesOnly.text.includes("Must not be sent"));
 
-  const empty = await compose(source, destination, "Must not be sent", undefined, [], false, undefined, {
+  const empty = await compose(source, destination, "Must not be sent", undefined, [], false, {
     ...noSourceText, showSignature: false,
   });
   assert.equal(empty.text, "");
@@ -497,96 +330,6 @@ test("source link removal ignores legacy source additions and preserves destinat
   assert(!composed.text.includes("https://t.me/unit_test/123"));
   assert.equal((composed.text.match(/https:\/\/t\.me\/mz05999/g) ?? []).length, 1);
   assert(composed.text.includes("خبر مهم"));
-});
-test("source-message fan-out reuses a translated body and does not quickly repeat a failed request", async () => {
-  const previousSettings = await settings();
-  const previousTest = await getSetting<{
-    provider: "gemini" | "openai" | "replit" | "deepl";
-    model: string;
-    ok: boolean;
-    message: string;
-    checkedAt: string;
-  } | null>("translation_test", null);
-  const sourceKey = `@translation_cache_${Date.now()}`;
-  const inserted = await pool.query(`INSERT INTO messages(source_id,source_key,telegram_message_id,text)
-    VALUES(NULL,$1,1,'gold price'),(NULL,$1,2,'gold price'),(NULL,$1,3,'Gold prices rose today.')
-    RETURNING id`, [sourceKey]);
-  const successfulMessageId = inserted.rows[0].id as number;
-  const failedMessageId = inserted.rows[1].id as number;
-  const rejectedMessageId = inserted.rows[2].id as number;
-  const model = GEMINI_FREE_MODEL;
-  await setSetting("settings", { ...previousSettings, translationProvider: "gemini", translationModel: model });
-  await setSetting("translation_test", {
-    provider: "gemini", model, ok: true, message: "نجح اختبار ترجمة حقيقي.", checkedAt: new Date().toISOString(),
-  });
-
-  try {
-    let successfulCalls = 0;
-    const successfulTranslator = async () => {
-      successfulCalls++;
-      return "ارتفع سعر الذهب.";
-    };
-    const translatedOnce = await translate("gold price", { ...source, translate: true }, successfulMessageId, successfulTranslator);
-    const reused = await translate("gold price", { ...source, translate: true }, successfulMessageId, successfulTranslator);
-    assert.equal(translatedOnce.status, "translated");
-    assert.equal(reused.text, "ارتفع سعر الذهب.");
-    assert.equal(successfulCalls, 1);
-    await translate("gold price without source link", { ...source, translate: true }, successfulMessageId, successfulTranslator);
-    assert.equal(successfulCalls, 2, "route-specific cleaned text must not reuse a different input's translation");
-
-    let failedCalls = 0;
-    const failingTranslator = async () => {
-      failedCalls++;
-      throw new Error("تم تجاوز حد الطلبات");
-    };
-    const allowOriginal = { ...source, translate: true, translationFailure: "original" as const };
-    await assert.rejects(
-      translate("another message", allowOriginal, failedMessageId, failingTranslator),
-      (error: unknown) => Boolean(error && typeof error === "object" && "translationHeld" in error),
-    );
-    await assert.rejects(
-      translate("another message", allowOriginal, failedMessageId, failingTranslator),
-      (error: unknown) => Boolean(error && typeof error === "object" && "translationHeld" in error),
-    );
-    assert.equal(failedCalls, 1);
-    assert.equal((await getSetting<{ ok: boolean }>("translation_test", { ok: false }))?.ok, true,
-      "a single transient message failure must not invalidate the provider's explicit setup test");
-
-    let invalidCalls = 0;
-    const unchangedTranslator = async () => {
-      invalidCalls++;
-      return "Gold prices rose today.";
-    };
-    await assert.rejects(
-      translate("Gold prices rose today.", allowOriginal, rejectedMessageId, unchangedTranslator),
-      (error: unknown) => Boolean(error && typeof error === "object" && "translationHeld" in error),
-      "an unchanged provider response must be held, even when original fallback is selected",
-    );
-    await assert.rejects(
-      translate("Gold prices rose today.", allowOriginal, rejectedMessageId, unchangedTranslator),
-      (error: unknown) => Boolean(error && typeof error === "object" && "translationHeld" in error),
-    );
-    assert.equal(invalidCalls, 1, "rejected translations are cached and never sent as the source text");
-
-    await setSetting("translation_test", {
-      provider: "openai", model: "missing-key-model", ok: false,
-      message: "missing key", checkedAt: new Date().toISOString(),
-    });
-    let unverifiedCalls = 0;
-    await assert.rejects(
-      translate("gold price", allowOriginal, undefined, async () => {
-        unverifiedCalls++;
-        return "ارتفع سعر الذهب.";
-      }),
-      (error: unknown) => Boolean(error && typeof error === "object" && "translationHeld" in error),
-    );
-    assert.equal(unverifiedCalls, 0, "do not send any text until the configured provider and model pass a live test");
-  } finally {
-    await pool.query("DELETE FROM messages WHERE source_key=$1", [sourceKey]);
-    await setSetting("settings", previousSettings);
-    if (previousTest) await setSetting("translation_test", previousTest);
-    else await pool.query("DELETE FROM app_settings WHERE key='translation_test'");
-  }
 });
 test("market price line omits provider and timestamp while retaining stale-price warning", () => {
   const fresh = marketPriceLine("BTC/USD", 81671.65, "down", false);

@@ -17,7 +17,7 @@ export default function WhatOwnersManage() {
         </div>
         <div className="deck-row flex min-h-[10vh] items-center gap-[1.8vw] py-[1.8vh]">
           <span className="h-[1.2vh] w-[1.2vh] shrink-0 rounded-full bg-primary" aria-hidden="true" />
-          <p className="font-body text-[2.05vw] leading-[1.25] text-text text-wrap-pretty">Translation and source-link settings</p>
+          <p className="font-body text-[2.05vw] leading-[1.25] text-text text-wrap-pretty">Link filtering and source-link settings</p>
         </div>
         <div className="deck-row flex min-h-[10vh] items-center gap-[1.8vw] py-[1.8vh]">
           <span className="h-[1.2vh] w-[1.2vh] shrink-0 rounded-full bg-primary" aria-hidden="true" />

@@ -2,5 +2,4 @@
 - [Preview one-off sends](preview-one-off-send.md) — Manual sends from preview must not create persistent forwarding rules.
 - [Telegram routing policy](telegram-routing-policy.md) — Only manually selected source-to-destination links may receive messages; never broadcast or overwrite unrelated routes.
 - [Telegram link filtering](telegram-link-filtering.md) — Removing links must preserve the remaining message and media rather than dropping the whole post.
-- [Free translation provider](translation-provider.md) — Use Gemini's free API tier for translation; never switch to a credit-billed provider without approval.
 - [Database schema sync](database-schema-sync.md) — The development database has schema changes not represented in the initial migration; use the supported push/publish flow.

@@ -3,8 +3,7 @@ import type { ChannelInput, Settings } from "@workspace/api-zod";
 
 export { pool };
 export const defaults: Settings = {
-  marketInterval: 300, marketStaleMinutes: 15, translationProvider: "disabled",
-  translationModel: "gpt-5-mini", timezone: "Asia/Jerusalem", maxAttempts: 5,
+  marketInterval: 300, marketStaleMinutes: 15, timezone: "Asia/Jerusalem", maxAttempts: 5,
 };
 export async function getSetting<T>(key: string, fallback: T): Promise<T> {
   const { rows } = await pool.query("SELECT value FROM app_settings WHERE key=$1", [key]);
@@ -28,7 +27,7 @@ export async function settings(): Promise<Settings> {
 }
 export function safeError(error: unknown): string {
   let message = error instanceof Error ? error.message : "خطأ غير معروف";
-  for (const key of ["BOT_TOKEN", "API_HASH", "API_ID", "SESSION_SECRET", "ADMIN_INITIAL_PASSWORD", "DEEPL_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY", "AI_INTEGRATIONS_OPENAI_API_KEY"]) {
+  for (const key of ["BOT_TOKEN", "API_HASH", "API_ID", "SESSION_SECRET", "ADMIN_INITIAL_PASSWORD"]) {
     const value = process.env[key];
     if (value) message = message.split(value).join("[محجوب]");
   }
@@ -74,7 +73,7 @@ export async function messageHistory(search = "", status = "", channelId?: numbe
   const { rows } = await pool.query(`
     SELECT d.id,m.text,COALESCE(s.name,m.source_key) AS "sourceName",
       COALESCE(c.name,d.destination_key) AS "destinationName",d.status,d.attempts,
-      d.translation_status AS "translationStatus",d.error,d.created_at AS "createdAt"
+      d.error,d.created_at AS "createdAt"
     FROM message_deliveries d JOIN messages m ON m.id=d.message_id
     LEFT JOIN source_channels s ON s.id=m.source_id LEFT JOIN destination_channels c ON c.id=d.destination_id
     WHERE ($1='' OR m.text ILIKE '%'||$1||'%' OR s.name ILIKE '%'||$1||'%' OR c.name ILIKE '%'||$1||'%')
