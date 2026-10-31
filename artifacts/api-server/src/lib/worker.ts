@@ -44,7 +44,10 @@ export async function getWorkerHealth() {
   return health;
 }
 
-async function processDelivery(id: number) {
+export async function processDelivery(id: number, {
+  api = botApi,
+  workerEnabled = () => getSetting("worker_enabled", false),
+}: { api?: typeof botApi; workerEnabled?: () => Promise<boolean> } = {}) {
   const { rows } = await pool.query(`SELECT d.*,m.source_id,m.source_key,m.telegram_message_id,m.text,m.has_photo,m.media_kind,m.entities
     FROM message_deliveries d JOIN messages m ON m.id=d.message_id WHERE d.id=$1`, [id]);
   const delivery = rows[0];
@@ -133,11 +136,11 @@ async function processDelivery(id: number) {
         return;
       }
       plan = plan.map((part) => ({ ...part, hideSourceLink, removeLinks, linkPolicyVersion: CURRENT_LINK_POLICY_VERSION, contentSettingsHash }));
-      await pool.query("UPDATE message_deliveries SET rendered_text=$2,send_plan=$3 WHERE id=$1", [id, composed.text, JSON.stringify(plan)]);
+      await pool.query("UPDATE message_deliveries SET rendered_text=$2,translation_status='not_requested',send_plan=$3 WHERE id=$1", [id, composed.text, JSON.stringify(plan)]);
     }
     if (!plan.length) throw new Error("لا توجد رسالة نصية أو صورة قابلة للنشر");
     for (let index = sentIds.length; index < plan.length; index++) {
-      if (!await getSetting("worker_enabled", false)) throw Object.assign(new Error("تم إيقاف العامل مؤقتاً"), { held: true });
+      if (!await workerEnabled()) throw Object.assign(new Error("تم إيقاف العامل مؤقتاً"), { held: true });
       const current = await pool.query(`SELECT s.config->>'skipMessagesWithLinks' AS "sourceSkipsLinks",
           r.hide_source_link AS "hideSourceLink",r.content_settings AS "contentSettings"
         FROM source_channels s JOIN routing_rules r ON r.source_id=s.id
@@ -165,9 +168,9 @@ async function processDelivery(id: number) {
           form.set("caption", part.html ?? part.text);
           if (part.html) form.set("parse_mode", "HTML");
         }
-        response = await botApi(media.kind === "video" ? "sendVideo" : media.kind === "file" ? "sendDocument" : "sendPhoto", form);
+        response = await api(media.kind === "video" ? "sendVideo" : media.kind === "file" ? "sendDocument" : "sendPhoto", form);
       } else {
-        response = await botApi("sendMessage", { chat_id: destination.username, text: part.html ?? part.text,
+        response = await api("sendMessage", { chat_id: destination.username, text: part.html ?? part.text,
           ...(part.html ? { parse_mode: "HTML" } : {}), link_preview_options: { is_disabled: true } });
       }
       sentIds.push(response.message_id);
