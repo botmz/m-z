@@ -265,25 +265,46 @@ export async function stopWorker() {
     leader.release(); leader = undefined;
   }
 }
-export async function control(action: string) {
-  if (action === "testBot") return testBot();
+type WorkerControlDependencies = {
+  testBot: typeof testBot;
+  connectReader: typeof connectReader;
+  readerConnected: typeof readerConnected;
+  stopWorker: typeof stopWorker;
+  startWorker: typeof startWorker;
+  setWorkerEnabled: (enabled: boolean) => Promise<void>;
+  audit: typeof audit;
+  tick: () => void;
+};
+export async function control(action: string, overrides: Partial<WorkerControlDependencies> = {}) {
+  const dependencies: WorkerControlDependencies = {
+    testBot,
+    connectReader,
+    readerConnected,
+    stopWorker,
+    startWorker,
+    setWorkerEnabled: enabled => setSetting("worker_enabled", enabled),
+    audit,
+    tick: () => { void tick(); },
+    ...overrides,
+  };
+  if (action === "testBot") return dependencies.testBot();
   if (action === "pause") {
-    await setSetting("worker_enabled", false);
+    await dependencies.setWorkerEnabled(false);
     Object.assign(workerState, { status: "paused", detail: "متوقف مؤقتاً؛ الإرسال الجاري قد يكتمل" });
     workerState.checkedAt = new Date().toISOString();
     await setSetting("worker_heartbeat", workerState);
-    await audit("info", "worker", "تم إيقاف المعالجة مؤقتاً؛ الإعدادات محفوظة");
+    await dependencies.audit("info", "worker", "تم إيقاف المعالجة مؤقتاً؛ الإعدادات محفوظة");
     return { ok: true, message: "تم إيقاف المعالجة مؤقتاً؛ قد يكتمل الإرسال الجاري" };
   }
-  const bot = await testBot();
-  await connectReader();
-  if (!bot.ok || !readerConnected()) return { ok: false, message: !bot.ok ? bot.message : readerState.detail };
+  const bot = await dependencies.testBot();
+  await dependencies.connectReader();
+  if (!bot.ok || !dependencies.readerConnected()) return { ok: false, message: !bot.ok ? bot.message : readerState.detail };
   if (action === "restart") {
-    await stopWorker();
-    startWorker();
+    await dependencies.stopWorker();
+    dependencies.startWorker();
   }
-  await setSetting("worker_enabled", true);
-  await audit("info", "worker", action === "restart" ? "أعيد تشغيل عامل المعالجة" : "تم تفعيل المعالجة");
-  void tick();
+  await dependencies.setWorkerEnabled(true);
+  await dependencies.audit("info", "worker", action === "restart" ? "أعيد تشغيل عامل المعالجة" : "تم تفعيل المعالجة");
+  dependencies.tick();
   return { ok: true, message: "تم التحقق من الاتصال وتفعيل عامل المعالجة؛ راجع الحالة الفعلية في لوحة الخدمات" };
 }
