@@ -5,7 +5,7 @@ import {
   GetChannelsResponse, CreateChannelResponse, UpdateChannelResponse,
 } from "@workspace/api-zod";
 import { pool, channels, channel, channelRow, normalizeUsername, audit } from "../../lib/store";
-import { replaceSourceRouting } from "../../lib/routing";
+import { replaceAllRouting, replaceSourceRouting } from "../../lib/routing";
 import { normalizeRouteContentSettings } from "../../lib/route-content";
 import { testSource } from "../../lib/telegram-reader";
 import { testDestination } from "../../lib/telegram-bot";
@@ -74,43 +74,7 @@ channelRouter.get("/routing", async (_req, res) => {
 });
 channelRouter.put("/routing", async (req, res) => {
   const { rules } = SaveRoutingBody.parse(req.body);
-  const seen = new Set<string>();
-  for (const rule of rules) {
-    if (rule.sourceId <= 0 || rule.destinationId >= 0 || seen.has(`${rule.sourceId}:${rule.destinationId}`)) {
-      res.status(400).json({ error: "قاعدة ربط غير صالحة أو مكررة" }); return;
-    }
-    seen.add(`${rule.sourceId}:${rule.destinationId}`);
-  }
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    // Serializes full routing replacements while keeping the previous configuration if any validation fails.
-    await client.query("SELECT pg_advisory_xact_lock(128006,2)");
-    const existing = await client.query("SELECT source_id,destination_id,hide_source_link,content_settings FROM routing_rules");
-    const existingByRoute = new Map(existing.rows.map((row) => [`${row.source_id}:${-row.destination_id}`, row]));
-    const preparedRules: Array<{ sourceId: number; destinationId: number; hideSourceLink: boolean; contentSettings: ReturnType<typeof normalizeRouteContentSettings> }> = [];
-    for (const rule of rules) {
-      const sources = await client.query("SELECT id,config FROM source_channels WHERE id=$1", [rule.sourceId]);
-      const dests = await client.query("SELECT id FROM destination_channels WHERE id=$1", [-rule.destinationId]);
-      if (!sources.rows.length || !dests.rows.length) throw Object.assign(new Error("القناة المحددة لم تعد موجودة"), { status: 400 });
-      const previous = existingByRoute.get(`${rule.sourceId}:${rule.destinationId}`);
-      const hideSourceLink = rule.hideSourceLink ?? Boolean(previous?.hide_source_link);
-      const contentSettings = normalizeRouteContentSettings(
-        rule.contentSettings ?? previous?.content_settings,
-        !Boolean(sources.rows[0].config?.skipMessagesWithLinks),
-      );
-      preparedRules.push({ sourceId: rule.sourceId, destinationId: rule.destinationId, hideSourceLink, contentSettings });
-    }
-    await client.query("DELETE FROM routing_rules");
-    for (const rule of preparedRules) {
-      await client.query(
-        "INSERT INTO routing_rules(source_id,destination_id,hide_source_link,content_settings) VALUES($1,$2,$3,$4)",
-        [rule.sourceId, -rule.destinationId, rule.hideSourceLink, rule.contentSettings],
-      );
-    }
-    await client.query("DELETE FROM routing_rules");
-    await client.query("COMMIT");
-  } catch (e) { await client.query("ROLLBACK"); throw e; } finally { client.release(); }
+  await replaceAllRouting(rules);
   await audit("info", "routing", `تم حفظ ${rules.length} من قواعد الربط`);
   res.json({ ok: true, message: "تم حفظ قواعد الربط؛ القنوات المعطلة لن تنشر الرسائل" });
 });

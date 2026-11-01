@@ -94,8 +94,20 @@ export async function compose(
     if (signature) suffix.push(signature);
   }
   const channelUrl = sourceLink(source.username);
-  const existingText = [...prefix, cleanedBody.text, ...suffix].join("\n").toLowerCase();
-  if (content.showText && content.showLinks && source.attachSource && !hideSourceLink && !existingText.includes(channelUrl.toLowerCase())) {
+  const existingText = [...prefix, cleanedBody.text, ...suffix].join("\n")
+    .normalize("NFKC")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase();
+  const sourceAttribution = `المصدر: ${source.name}`
+    .normalize("NFKC")
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase();
+  if (
+    content.showText && content.showLinks && source.attachSource && !hideSourceLink &&
+    !existingText.includes(channelUrl.toLocaleLowerCase()) &&
+    !existingText.includes(sourceAttribution)
+  ) {
     suffix.push(`المصدر: ${source.name}\n${sourceLink(source.username, messageId)}`);
   }
   const renderedText = [...prefix, cleanedBody.text, ...suffix].filter(Boolean).join("\n\n");

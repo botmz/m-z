@@ -5,7 +5,7 @@ import { removeSourceReferences, removeTextLinks } from "../src/lib/source-refer
 import { direction } from "../src/lib/market";
 import { channelRow, normalizeUsername, sameTelegramUsername, pool, claimDelivery, type Channel } from "../src/lib/store";
 import { CreateChannelBody, SaveChannelRoutingBody } from "@workspace/api-zod";
-import { replaceSourceRouting } from "../src/lib/routing";
+import { replaceAllRouting, replaceSourceRouting } from "../src/lib/routing";
 import { ingest, isVideoDocument } from "../src/lib/telegram-reader";
 import { resolveWorkerHealth, WORKER_HEARTBEAT_STALE_AFTER_MS } from "../src/lib/worker-health";
 import { normalizeRouteContentSettings, routeAllowsMedia, isRouteMessageExcluded } from "../src/lib/route-content";
@@ -223,6 +223,19 @@ test("hiding a source link preserves unrelated links but ignores legacy source f
   assert(!composed.text.includes("https://t.me/legacy"));
   assert(!composed.text.includes("https://t.me/unit_test"));
   assert(composed.text.includes("https://t.me/official"));
+});
+test("a fixed signature that already names the source does not get a duplicate source footer", async () => {
+  const destination: Channel = {
+    ...source,
+    id: -2,
+    kind: "destination",
+    username: "@unit_destination",
+    signatureEnabled: true,
+    suffix: "المصدر: Unit Test",
+  };
+  const composed = await compose(source, destination, "خبر مهم", 234);
+  assert.equal(composed.text, "خبر مهم\n\nالمصدر: Unit Test");
+  assert.equal(composed.text.match(/المصدر:/g)?.length, 1);
 });
 test("route hide-source option runs before composition while disabled routes keep the source link", async () => {
   const destination: Channel = {
@@ -647,6 +660,62 @@ test("editing a source replaces only its selected destinations and rolls back in
     if (otherSourceId) await db.query("DELETE FROM source_channels WHERE id=$1", [otherSourceId]);
     if (destinationId) await db.query("DELETE FROM destination_channels WHERE id=$1", [destinationId]);
     if (otherDestinationId) await db.query("DELETE FROM destination_channels WHERE id=$1", [otherDestinationId]);
+    db.release();
+  }
+});
+test("saving all routing rules keeps every selected route and its content settings", async () => {
+  const db = await pool.connect();
+  try {
+    await db.query("CREATE TEMP TABLE source_channels(id int PRIMARY KEY, config jsonb)");
+    await db.query("CREATE TEMP TABLE destination_channels(id int PRIMARY KEY)");
+    await db.query(`CREATE TEMP TABLE routing_rules(
+      id serial PRIMARY KEY, source_id int NOT NULL, destination_id int NOT NULL,
+      hide_source_link boolean NOT NULL DEFAULT false, content_settings jsonb
+    )`);
+    await db.query("INSERT INTO source_channels(id,config) VALUES(1,'{}'),(2,'{}')");
+    await db.query("INSERT INTO destination_channels(id) VALUES(11),(12)");
+    await db.query(
+      "INSERT INTO routing_rules(source_id,destination_id,hide_source_link,content_settings) VALUES(1,11,false,'{}'),(2,12,true,'{\"showLinks\":false}')",
+    );
+
+    await replaceAllRouting([
+      { sourceId: 1, destinationId: -11, hideSourceLink: true, contentSettings: { showText: false, excludedTexts: ["555"] } },
+      { sourceId: 2, destinationId: -12, hideSourceLink: false },
+    ], db);
+
+    const saved = await db.query(
+      "SELECT source_id,destination_id,hide_source_link,content_settings FROM routing_rules ORDER BY source_id",
+    );
+    assert.equal(saved.rowCount, 2);
+    assert.deepEqual(saved.rows.map((row) => ({
+      sourceId: row.source_id,
+      destinationId: row.destination_id,
+      hideSourceLink: row.hide_source_link,
+    })), [
+      { sourceId: 1, destinationId: 11, hideSourceLink: true },
+      { sourceId: 2, destinationId: 12, hideSourceLink: false },
+    ]);
+    assert.deepEqual(saved.rows[0].content_settings, {
+      showText: false, showImages: true, showVideos: true, showFiles: true,
+      showLinks: true, showMarketPrices: true, showSignature: true, excludedTexts: ["555"],
+    });
+    assert.deepEqual(saved.rows[1].content_settings, {
+      showText: true, showImages: true, showVideos: true, showFiles: true,
+      showLinks: false, showMarketPrices: true, showSignature: true, excludedTexts: [],
+    });
+
+    await assert.rejects(() => replaceAllRouting([
+      { sourceId: 1, destinationId: -11 },
+      { sourceId: 1, destinationId: -11 },
+    ], db), /غير صالحة أو مكررة/);
+    const afterInvalidSave = await db.query("SELECT id FROM routing_rules");
+    assert.equal(afterInvalidSave.rowCount, 2);
+
+    await replaceAllRouting([], db);
+    const cleared = await db.query("SELECT id FROM routing_rules");
+    assert.equal(cleared.rowCount, 0);
+  } finally {
+    await db.query("DROP TABLE IF EXISTS routing_rules,destination_channels,source_channels");
     db.release();
   }
 });

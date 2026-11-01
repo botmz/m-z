@@ -1,7 +1,7 @@
 kind = "web"
 previewPath = "/"
 title = "MZ Telegram Bots"
-description = "منصة عربية آمنة لمالك واحد لإدارة نقل رسائل Telegram من المصادر إلى قنوات النشر مع الترجمة والأسعار وسجل المعالجة."
+description = "منصة عربية آمنة لمالك واحد لإدارة استقبال رسائل Telegram وتوجيهها ونشرها مع الأسعار وسجل المعالجة."
 version = "1.0.0"
 id = "artifacts/mz-telegram"
 router = "path"

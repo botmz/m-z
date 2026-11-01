@@ -256,6 +256,29 @@ test("a queued video retries from its saved file, removes only the source attrib
   );
 });
 
+test("a queued document is sent as a Telegram file with its original caption", async () => {
+  const payload = Buffer.from("saved-document-bytes");
+  await fixture("ملف مهم", async f => {
+    await f.saveMedia("file", payload, "application/pdf", "report.pdf");
+    const calls: Array<{ method: string; body: any }> = [];
+    await processDelivery(f.id, {
+      workerEnabled,
+      api: async (method, body) => {
+        calls.push({ method, body });
+        const document = body.get("document") as File;
+        assert.equal(document.name, "report.pdf");
+        assert.deepEqual(Buffer.from(await document.arrayBuffer()), payload);
+        assert.equal(body.get("caption"), "ملف مهم");
+        return { message_id: 802 };
+      },
+    });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]?.method, "sendDocument");
+    assert.equal((await f.state()).status, "sent");
+    assert.deepEqual((await f.state()).telegram_message_ids, [802]);
+  });
+});
+
 test("removed translation cannot be reactivated or tested through old API clients", async () => {
   const app = express();
   app.use(express.json(), operationsRouter);

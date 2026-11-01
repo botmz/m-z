@@ -2,9 +2,81 @@ import { pool } from "./store";
 import { normalizeRouteContentSettings, type RouteContentSettings } from "./route-content";
 
 type SourceRouteSettings = { destinationId: number; contentSettings: RouteContentSettings };
+type FullRouteSettings = {
+  sourceId: number;
+  destinationId: number;
+  hideSourceLink?: boolean;
+  contentSettings?: Partial<RouteContentSettings>;
+};
 
 function routingError(message: string, status: number): Error & { status: number } {
   return Object.assign(new Error(message), { status });
+}
+
+export async function replaceAllRouting(
+  rules: FullRouteSettings[],
+  suppliedClient?: Awaited<ReturnType<typeof pool.connect>>,
+): Promise<void> {
+  const seen = new Set<string>();
+  for (const rule of rules) {
+    if (
+      !Number.isInteger(rule.sourceId) || rule.sourceId <= 0 || rule.sourceId > 2147483647 ||
+      !Number.isInteger(rule.destinationId) || rule.destinationId >= 0 || rule.destinationId < -2147483648 ||
+      seen.has(`${rule.sourceId}:${rule.destinationId}`)
+    ) {
+      throw routingError("قاعدة ربط غير صالحة أو مكررة", 400);
+    }
+    seen.add(`${rule.sourceId}:${rule.destinationId}`);
+  }
+
+  const client = suppliedClient ?? await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(128006,2)");
+    const existing = await client.query("SELECT source_id,destination_id,hide_source_link,content_settings FROM routing_rules");
+    const existingByRoute = new Map(existing.rows.map((row) => [`${row.source_id}:${-row.destination_id}`, row]));
+    const prepared: Array<{
+      sourceId: number;
+      destinationId: number;
+      hideSourceLink: boolean;
+      contentSettings: RouteContentSettings;
+    }> = [];
+
+    for (const rule of rules) {
+      const [source, destination] = await Promise.all([
+        client.query("SELECT id,config FROM source_channels WHERE id=$1", [rule.sourceId]),
+        client.query("SELECT id FROM destination_channels WHERE id=$1", [-rule.destinationId]),
+      ]);
+      if (!source.rows.length || !destination.rows.length) {
+        throw routingError("القناة المحددة لم تعد موجودة", 400);
+      }
+
+      const previous = existingByRoute.get(`${rule.sourceId}:${rule.destinationId}`);
+      prepared.push({
+        sourceId: rule.sourceId,
+        destinationId: -rule.destinationId,
+        hideSourceLink: rule.hideSourceLink ?? Boolean(previous?.hide_source_link),
+        contentSettings: normalizeRouteContentSettings(
+          rule.contentSettings ?? previous?.content_settings,
+          !Boolean(source.rows[0].config?.skipMessagesWithLinks),
+        ),
+      });
+    }
+
+    await client.query("DELETE FROM routing_rules");
+    for (const rule of prepared) {
+      await client.query(
+        "INSERT INTO routing_rules(source_id,destination_id,hide_source_link,content_settings) VALUES($1,$2,$3,$4)",
+        [rule.sourceId, rule.destinationId, rule.hideSourceLink, rule.contentSettings],
+      );
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    if (!suppliedClient) client.release();
+  }
 }
 
 export async function replaceSourceRouting(
