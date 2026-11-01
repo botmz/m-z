@@ -3,3 +3,4 @@
 - [Telegram routing policy](telegram-routing-policy.md) — Only manually selected source-to-destination links may receive messages; never broadcast or overwrite unrelated routes.
 - [Telegram link filtering](telegram-link-filtering.md) — Removing links must preserve the remaining message and media rather than dropping the whole post.
 - [Database schema sync](database-schema-sync.md) — The development database has schema changes not represented in the initial migration; use the supported push/publish flow.
+- [GitHub repository access](github-repositories-auth.md) — Replit Repositories can authenticate `gh` through its proxy even when the Agent connector is unavailable.
