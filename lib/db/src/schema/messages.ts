@@ -1,5 +1,9 @@
-import { pgTable, serial, text, integer, timestamp, boolean, uniqueIndex, index, jsonb, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, timestamp, boolean, uniqueIndex, index, jsonb, primaryKey, customType } from "drizzle-orm/pg-core";
 import { sourceChannels, destinationChannels } from "./channels";
+
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType: () => "bytea",
+});
 
 export const messages = pgTable("messages", {
   id: serial("id").primaryKey(),
@@ -9,6 +13,9 @@ export const messages = pgTable("messages", {
   text: text("text").notNull(),
   hasPhoto: boolean("has_photo").notNull().default(false),
   mediaKind: text("media_kind").notNull().default("none"),
+  mediaData: bytea("media_data"),
+  mediaMimeType: text("media_mime_type"),
+  mediaFilename: text("media_filename"),
   entities: jsonb("entities").notNull().default([]),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [uniqueIndex("messages_dedup").on(t.sourceKey, t.telegramMessageId)]);

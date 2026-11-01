@@ -48,7 +48,8 @@ export async function processDelivery(id: number, {
   api = botApi,
   workerEnabled = () => getSetting("worker_enabled", false),
 }: { api?: typeof botApi; workerEnabled?: () => Promise<boolean> } = {}) {
-  const { rows } = await pool.query(`SELECT d.*,m.source_id,m.source_key,m.telegram_message_id,m.text,m.has_photo,m.media_kind,m.entities
+  const { rows } = await pool.query(`SELECT d.*,m.source_id,m.source_key,m.telegram_message_id,m.text,m.has_photo,m.media_kind,
+      m.media_data,m.media_mime_type,m.media_filename,m.entities
     FROM message_deliveries d JOIN messages m ON m.id=d.message_id WHERE d.id=$1`, [id]);
   const delivery = rows[0];
   if (!delivery || !delivery.source_id || !delivery.destination_id) {
@@ -166,7 +167,14 @@ export async function processDelivery(id: number, {
       }
       const part = plan[index]!;
       const media = ["sendMedia", "sendPhoto", "sendVideo"].includes(part.method)
-        ? await downloadSourceMedia(source, delivery.telegram_message_id)
+        ? Buffer.isBuffer(delivery.media_data)
+          ? {
+              kind: delivery.media_kind === "video" || delivery.media_kind === "file" ? delivery.media_kind : "photo",
+              mimeType: delivery.media_mime_type ?? (delivery.media_kind === "video" ? "video/mp4" : "image/jpeg"),
+              filename: delivery.media_filename ?? (delivery.media_kind === "video" ? "telegram-media.mp4" : "telegram-media.jpg"),
+              buffer: delivery.media_data,
+            }
+          : await downloadSourceMedia(source, delivery.telegram_message_id)
         : undefined;
       await pool.query("UPDATE message_deliveries SET status='sending',updated_at=now() WHERE id=$1", [id]);
       attemptedSend = true;

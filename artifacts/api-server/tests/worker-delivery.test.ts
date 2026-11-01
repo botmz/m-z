@@ -2,6 +2,7 @@ import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { pool } from "../src/lib/store";
 import { processDelivery } from "../src/lib/worker";
+import { TelegramApiError } from "../src/lib/telegram-bot";
 import { normalizeRouteContentSettings, routeContentSettingsKey } from "../src/lib/route-content";
 import { createSendPlan, CURRENT_LINK_POLICY_VERSION } from "../src/lib/composition";
 import express from "express";
@@ -12,7 +13,10 @@ import { SaveSettingsBody } from "@workspace/api-zod";
 // the global pause setting. Future due dates keep the running worker off fixtures.
 async function fixture(text: string, run: (f: {
   id: number;
+  sourceKey: string;
   enableFilter: () => Promise<unknown>;
+  setText: (text: string) => Promise<unknown>;
+  saveMedia: (kind: string, data: Buffer, mimeType: string, filename: string) => Promise<unknown>;
   savePlan: (parts: string[], sentIds?: number[], translated?: boolean) => Promise<unknown>;
   excludeTexts: (texts: string[]) => Promise<unknown>;
   state: () => Promise<Record<string, any>>;
@@ -48,9 +52,15 @@ async function fixture(text: string, run: (f: {
     )).rows[0].id;
     await run({
       id,
+      sourceKey: `@mz_worker_src_${suffix}`,
       enableFilter: () => pool.query(
         `UPDATE source_channels SET config=jsonb_set(config,'{skipMessagesWithLinks}','true') WHERE id=$1`,
         [sourceId],
+      ),
+      setText: text => pool.query("UPDATE messages SET text=$2 WHERE id=$1", [messageId, text]),
+      saveMedia: (kind, data, mimeType, filename) => pool.query(
+        "UPDATE messages SET has_photo=true,media_kind=$2,media_data=$3,media_mime_type=$4,media_filename=$5 WHERE id=$1",
+        [messageId, kind, data, mimeType, filename],
       ),
       savePlan: (parts, sentIds = [], translated = false) => pool.query(
         `UPDATE message_deliveries SET send_plan=$2,telegram_message_ids=$3,status=$4,translation_status=$5 WHERE id=$1`,
@@ -216,6 +226,34 @@ test("old translated queue plans are rebuilt as original text; partial translati
 
 test("link-only media posts retain a single media delivery rather than an extra text message", () => {
   assert.deepEqual(createSendPlan("", "", true, false), [{ method: "sendMedia", text: "" }]);
+});
+
+test("a queued video retries from its saved file, removes only the source attribution, and sends once", async () => {
+  const payload = Buffer.from("saved-video-bytes");
+  await fixture("Video details", async f => {
+      await f.setText(`Video details https://example.org/report\nSource: ${f.sourceKey}\nhttps://t.me/${f.sourceKey.slice(1)}/1`);
+      await f.saveMedia("video", payload, "video/mp4", "market-update.mp4");
+      await pool.query("UPDATE routing_rules SET hide_source_link=true WHERE destination_id=(SELECT destination_id FROM message_deliveries WHERE id=$1)", [f.id]);
+      const calls: Array<{ method: string; body: any }> = [];
+      const api = async (method: string, body: any) => {
+        calls.push({ method, body });
+        const video = body.get("video") as File;
+        assert.equal(video.name, "market-update.mp4");
+        assert.deepEqual(Buffer.from(await video.arrayBuffer()), payload);
+        assert.equal(body.get("caption"), "Video details https://example.org/report");
+        if (calls.length === 1) throw new TelegramApiError("Too Many Requests", 429);
+        return { message_id: 801 };
+      };
+      await processDelivery(f.id, { api, workerEnabled });
+      await processDelivery(f.id, { api, workerEnabled });
+      await processDelivery(f.id, { api, workerEnabled });
+      assert.equal(calls.length, 2);
+      assert(calls.every(call => call.method === "sendVideo" && call.body instanceof FormData));
+      const state = await f.state();
+      assert.equal(state.status, "sent");
+      assert.deepEqual(state.telegram_message_ids, [801]);
+    },
+  );
 });
 
 test("removed translation cannot be reactivated or tested through old API clients", async () => {

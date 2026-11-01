@@ -159,14 +159,18 @@ export async function ingest(source: Channel, message: Api.Message) {
   const mediaKind = sendableMediaKind(message);
   const hasMedia = Boolean(mediaKind);
   if (!acceptsMessage(source, originalText, hasMedia, originalEntities)) return;
+  const media = mediaKind && source.mediaMode === "include" ? await downloadMessageMedia(message) : undefined;
   const connection = await pool.connect();
   try {
     await connection.query("BEGIN");
     const current = await connection.query("SELECT enabled FROM source_channels WHERE id=$1", [source.id]);
     if (!current.rows[0]?.enabled) { await connection.query("ROLLBACK"); return; }
-    const { rows } = await connection.query(`INSERT INTO messages(source_id,source_key,telegram_message_id,text,has_photo,media_kind,entities)
-      VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(source_key,telegram_message_id) DO NOTHING RETURNING id`,
-    [source.id, source.username, message.id, originalText, hasMedia, mediaKind ?? "none", JSON.stringify(originalEntities)]);
+    const { rows } = await connection.query(`INSERT INTO messages(
+        source_id,source_key,telegram_message_id,text,has_photo,media_kind,media_data,media_mime_type,media_filename,entities
+      ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      ON CONFLICT(source_key,telegram_message_id) DO NOTHING RETURNING id`,
+    [source.id, source.username, message.id, originalText, hasMedia, mediaKind ?? "none",
+      media?.buffer ?? null, media?.mimeType ?? null, media?.filename ?? null, JSON.stringify(originalEntities)]);
     if (rows[0]) {
       await connection.query(`INSERT INTO message_deliveries(message_id,destination_id,destination_key)
         SELECT $1,d.id,d.username FROM routing_rules r JOIN destination_channels d ON d.id=r.destination_id
@@ -240,10 +244,14 @@ export async function downloadSourceMedia(source: Channel, messageId: number): P
   if (!readerConnected() || !client) throw new Error("جلسة قراءة Telegram غير متصلة");
   const messages = await client.getMessages(source.username, { ids: [messageId] });
   if (!messages[0] || messages[0].noforwards) throw new Error("الوسيط غير متاح أو محمي من إعادة النشر");
-  const message = messages[0];
+  return downloadMessageMedia(messages[0]);
+}
+
+async function downloadMessageMedia(message: Api.Message): Promise<SourceMedia> {
   const kind = sendableMediaKind(message);
   if (!kind) throw new Error("الوسيط لم يعد صورة أو فيديو أو ملفاً قابلاً للإرسال");
-  const buffer = await client.downloadMedia(messages[0], {});
+  if (!client) throw new Error("جلسة قراءة Telegram غير متصلة");
+  const buffer = await client.downloadMedia(message, {});
   if (!Buffer.isBuffer(buffer)) throw new Error("تعذر تنزيل الوسيط من قناة المصدر");
   const document = message.media instanceof Api.MessageMediaDocument ? message.media.document as any : undefined;
   const mimeType = kind === "photo" ? "image/jpeg"
