@@ -13,4 +13,9 @@ export interface RouteContentSettings {
   showLinks: boolean;
   showMarketPrices: boolean;
   showSignature: boolean;
+  /**
+     * @maxItems 20
+     * @items.maxLength 200
+     */
+  excludedTexts: string[];
 }

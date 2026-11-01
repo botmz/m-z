@@ -309,6 +309,10 @@ export const saveChannelRoutingBodyDestinationIdsItemMax = -1;
 export const saveChannelRoutingBodyHideSourceLinkDestinationIdsItemMin = -2147483648;
 export const saveChannelRoutingBodyHideSourceLinkDestinationIdsItemMax = -1;
 
+export const saveChannelRoutingBodyRouteSettingsItemContentSettingsExcludedTextsItemMax = 200;
+
+export const saveChannelRoutingBodyRouteSettingsItemContentSettingsExcludedTextsMax = 20;
+
 
 
 export const SaveChannelRoutingBody = zod.object({
@@ -323,7 +327,8 @@ export const SaveChannelRoutingBody = zod.object({
   "showFiles": zod.boolean(),
   "showLinks": zod.boolean(),
   "showMarketPrices": zod.boolean(),
-  "showSignature": zod.boolean()
+  "showSignature": zod.boolean(),
+  "excludedTexts": zod.array(zod.string().max(saveChannelRoutingBodyRouteSettingsItemContentSettingsExcludedTextsItemMax)).max(saveChannelRoutingBodyRouteSettingsItemContentSettingsExcludedTextsMax)
 })
 })).optional()
 })
@@ -332,6 +337,12 @@ export const SaveChannelRoutingResponse = zod.object({
   "ok": zod.boolean(),
   "message": zod.string()
 })
+
+
+export const getRoutingResponseContentSettingsExcludedTextsItemMax = 200;
+
+export const getRoutingResponseContentSettingsExcludedTextsMax = 20;
+
 
 
 export const GetRoutingResponseItem = zod.object({
@@ -345,10 +356,17 @@ export const GetRoutingResponseItem = zod.object({
   "showFiles": zod.boolean(),
   "showLinks": zod.boolean(),
   "showMarketPrices": zod.boolean(),
-  "showSignature": zod.boolean()
+  "showSignature": zod.boolean(),
+  "excludedTexts": zod.array(zod.string().max(getRoutingResponseContentSettingsExcludedTextsItemMax)).max(getRoutingResponseContentSettingsExcludedTextsMax)
 })
 })
 export const GetRoutingResponse = zod.array(GetRoutingResponseItem)
+
+
+export const saveRoutingBodyRulesItemContentSettingsExcludedTextsItemMax = 200;
+
+export const saveRoutingBodyRulesItemContentSettingsExcludedTextsMax = 20;
+
 
 
 export const SaveRoutingBody = zod.object({
@@ -363,7 +381,8 @@ export const SaveRoutingBody = zod.object({
   "showFiles": zod.boolean(),
   "showLinks": zod.boolean(),
   "showMarketPrices": zod.boolean(),
-  "showSignature": zod.boolean()
+  "showSignature": zod.boolean(),
+  "excludedTexts": zod.array(zod.string().max(saveRoutingBodyRulesItemContentSettingsExcludedTextsItemMax)).max(saveRoutingBodyRulesItemContentSettingsExcludedTextsMax)
 }).optional()
 }))
 })

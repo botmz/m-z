@@ -5,7 +5,7 @@ import { compose, createSendPlan, isBotTestMessage, savedPlanDisposition, savedP
 import { refreshPrices } from "./market";
 import { logger } from "./logger";
 import { resolveWorkerHealth, type WorkerHeartbeat } from "./worker-health";
-import { normalizeRouteContentSettings, routeContentSettingsKey, routeAllowsMedia } from "./route-content";
+import { normalizeRouteContentSettings, routeContentSettingsKey, routeAllowsMedia, isRouteMessageExcluded } from "./route-content";
 import type { PoolClient } from "@workspace/db";
 
 let loopBusy = false;
@@ -80,6 +80,17 @@ export async function processDelivery(id: number, {
       await pool.query("UPDATE message_deliveries SET status='skipped',error=$2,updated_at=now() WHERE id=$1", [id, reason]);
       await pool.query("INSERT INTO delivery_attempts(delivery_id,status,detail) VALUES($1,'skipped',$2)", [id, reason]);
       await audit("warning", "delivery", reason);
+      return;
+    }
+    if (isRouteMessageExcluded(delivery.text ?? "", routeContent)) {
+      const hasSentParts = sentIds.length > 0;
+      const status = hasSentParts ? "held" : "skipped";
+      const reason = hasSentParts
+        ? "أُوقف استكمال الرسالة بعد استثناء نصها لهذا المسار؛ لا يمكن سحب الأجزاء المنشورة تلقائياً."
+        : "تم تجاوز الرسالة لأن نصها الكامل مستثنى لهذا المسار.";
+      await pool.query("UPDATE message_deliveries SET status=$2,error=$3,updated_at=now() WHERE id=$1", [id, status, reason]);
+      await pool.query("INSERT INTO delivery_attempts(delivery_id,status,detail) VALUES($1,$2,$3)", [id, status, reason]);
+      await audit("warning", "delivery", `تم تجاوز رسالة مستثناة للمسار من ${source.username} إلى ${destination.username}`);
       return;
     }
     delivery.attempts += 1;

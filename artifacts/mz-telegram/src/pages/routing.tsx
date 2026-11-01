@@ -6,6 +6,7 @@ import {
 } from '@workspace/api-client-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
 import { Empty, ErrorBox, PageHeader, Panel, RowsSkeleton } from '@/components/mz-ui';
 import { reportError, reportResult } from '@/lib/mz';
 import { cn } from '@/lib/utils';
@@ -19,14 +20,16 @@ type RouteContentSettings = {
   showLinks: boolean;
   showMarketPrices: boolean;
   showSignature: boolean;
+  excludedTexts: string[];
 };
 const defaults = (showLinks = true): RouteContentSettings => ({
   showText: true, showImages: true, showVideos: true, showFiles: true,
-  showLinks, showMarketPrices: true, showSignature: true,
+  showLinks, showMarketPrices: true, showSignature: true, excludedTexts: [],
 });
 const signature = (routes: Set<string>, hidden: Set<string>, content: Record<string, RouteContentSettings>) =>
   `${[...routes].sort().join('|')}#${[...hidden].sort().join('|')}#${[...routes].sort().map((route) => `${route}:${JSON.stringify(content[route] ?? defaults())}`).join('|')}`;
-const contentOptions: Array<[keyof RouteContentSettings, string]> = [
+type RouteContentToggle = Exclude<keyof RouteContentSettings, 'excludedTexts'>;
+const contentOptions: Array<[RouteContentToggle, string]> = [
   ['showText', 'إظهار نص رسالة المصدر'],
   ['showImages', 'إظهار الصور'],
   ['showVideos', 'إظهار الفيديوهات'],
@@ -35,10 +38,12 @@ const contentOptions: Array<[keyof RouteContentSettings, string]> = [
   ['showMarketPrices', 'إظهار شريط الأسعار'],
   ['showSignature', 'إظهار التوقيع الثابت'],
 ];
-const optionEnabled = (settings: RouteContentSettings, field: keyof RouteContentSettings) =>
+const optionEnabled = (settings: RouteContentSettings, field: RouteContentToggle) =>
   field === 'showLinks' ? !settings.showLinks : settings[field];
-const optionSettingValue = (field: keyof RouteContentSettings, enabled: boolean) =>
+const optionSettingValue = (field: RouteContentToggle, enabled: boolean) =>
   field === 'showLinks' ? !enabled : enabled;
+const normalizeExcludedTexts = (items: string[]) =>
+  items.map((item) => item.normalize('NFKC').trim().replace(/\s+/g, ' ')).filter(Boolean);
 
 export default function RoutingPage() {
   const qc = useQueryClient();
@@ -75,6 +80,10 @@ export default function RoutingPage() {
   const sources = (ch.data ?? []).filter((c) => c.kind === 'source');
   const dests = (ch.data ?? []).filter((c) => c.kind === 'destination');
   const dirty = signature(sel, hide, content) !== signature(baseSel, baseHide, baseContent);
+  const invalidExcludedTexts = [...sel].some((route) => {
+    const excludedTexts = normalizeExcludedTexts((content[route] ?? defaults()).excludedTexts);
+    return excludedTexts.length > 20 || excludedTexts.some((text) => text.length > 200);
+  });
 
   const flip = (route: string, sourceSkipsLinks: boolean) => {
     const removing = sel.has(route);
@@ -93,9 +102,13 @@ export default function RoutingPage() {
       return next;
     });
   };
-  const updateContent = (route: string, field: keyof RouteContentSettings, value: boolean) => setContent((current) => ({
+  const updateContent = (route: string, field: RouteContentToggle, value: boolean) => setContent((current) => ({
     ...current,
     [route]: { ...(current[route] ?? defaults()), [field]: value },
+  }));
+  const updateExcludedTexts = (route: string, value: string) => setContent((current) => ({
+    ...current,
+    [route]: { ...(current[route] ?? defaults()), excludedTexts: value.split(/\r?\n/) },
   }));
   const toggleHide = (route: string) => setHide((p) => {
     const n = new Set(p);
@@ -113,6 +126,10 @@ export default function RoutingPage() {
     setExpandedRoute(null);
   };
   const submit = async () => {
+    if (invalidExcludedTexts) {
+      reportResult({ ok: false, message: 'قائمة النصوص المستثناة تقبل حتى 20 نصاً كاملاً، بحد أقصى 200 حرف لكل نص.' });
+      return;
+    }
     const changedSources = sources.filter((source) => {
       const prefix = `${source.id}:`;
       const routesFor = (set: Set<string>) => [...set].filter((route) => route.startsWith(prefix)).sort().join('|');
@@ -133,7 +150,8 @@ export default function RoutingPage() {
           .map((route) => Number(route.split(':')[1]));
         const routeSettings = destinationIds.map((destinationId) => {
           const route = key(source.id, destinationId);
-          return { destinationId, contentSettings: content[route] ?? defaults(!source.skipMessagesWithLinks) };
+          const settings = content[route] ?? defaults(!source.skipMessagesWithLinks);
+          return { destinationId, contentSettings: { ...settings, excludedTexts: normalizeExcludedTexts(settings.excludedTexts) } };
         });
         const result = await save.mutateAsync({ id: source.id, data: { destinationIds, hideSourceLinkDestinationIds, routeSettings } });
         if (!result.ok) {
@@ -163,7 +181,7 @@ export default function RoutingPage() {
         actions={
           <>
             <Button variant="outline" onClick={reset} disabled={!dirty} data-testid="button-reset-routing"><RotateCcw /> تراجع</Button>
-            <Button onClick={() => void submit()} disabled={!dirty || save.isPending} data-testid="button-save-routing"><Save /> {save.isPending ? 'جارٍ الحفظ...' : 'حفظ التوجيه'}</Button>
+            <Button onClick={() => void submit()} disabled={!dirty || save.isPending || invalidExcludedTexts} data-testid="button-save-routing"><Save /> {save.isPending ? 'جارٍ الحفظ...' : 'حفظ التوجيه'}</Button>
           </>
         }
       />
@@ -200,6 +218,7 @@ export default function RoutingPage() {
                   {dests.map((d) => {
                     const route = key(s.id, d.id);
                     const on = sel.has(route);
+                    const routeSettings = content[route] ?? defaults(!s.skipMessagesWithLinks);
                     return (
                       <div key={d.id} className="flex flex-wrap items-center gap-1.5">
                         <button
@@ -245,13 +264,38 @@ export default function RoutingPage() {
                                     <label key={field} className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2 text-sm">
                                       <span>{label}</span>
                                       <Switch
-                                        checked={optionEnabled(content[route] ?? defaults(!s.skipMessagesWithLinks), field)}
+                                        checked={optionEnabled(routeSettings, field)}
                                         onCheckedChange={(value) => updateContent(route, field, optionSettingValue(field, value))}
                                         data-testid={`switch-route-content-${field}-${s.id}-${d.id}`}
                                       />
                                     </label>
                                   ))}
                                 </div>
+                                <label className="mt-3 block text-sm font-semibold" htmlFor={`excluded-texts-${s.id}-${d.id}`}>
+                                  تجاهل الرسائل المطابقة بالكامل
+                                </label>
+                                <Textarea
+                                  id={`excluded-texts-${s.id}-${d.id}`}
+                                  rows={2}
+                                  maxLength={4019}
+                                  value={routeSettings.excludedTexts.join('\n')}
+                                  onChange={(event) => updateExcludedTexts(route, event.target.value)}
+                                  placeholder="نص كامل في كل سطر"
+                                  data-testid={`input-excluded-texts-${s.id}-${d.id}`}
+                                />
+                                {(() => {
+                                  const excludedTexts = normalizeExcludedTexts(routeSettings.excludedTexts);
+                                  const invalid = excludedTexts.length > 20 || excludedTexts.some((text) => text.length > 200);
+                                  return invalid ? (
+                                    <p className="mt-1 rounded-md border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-warn" role="alert" data-testid={`warning-excluded-texts-${s.id}-${d.id}`}>
+                                      الحد الأقصى 20 نصاً كاملاً، و200 حرف لكل نص.
+                                    </p>
+                                  ) : (
+                                    <p className="mt-1 text-xs text-muted-foreground">
+                                      لا يُرسل المنشور كله إذا تطابق نصه بالكامل. هذا الاستثناء يخص هذا المسار فقط؛ حتى 20 نصاً، بحد أقصى 200 حرف لكل نص.
+                                    </p>
+                                  );
+                                })()}
                                 {(() => {
                                   const value = content[route] ?? defaults(!s.skipMessagesWithLinks);
                                   const mediaAvailable = s.mediaMode === 'include' &&

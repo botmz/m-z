@@ -8,7 +8,7 @@ import { CreateChannelBody, SaveChannelRoutingBody } from "@workspace/api-zod";
 import { replaceSourceRouting } from "../src/lib/routing";
 import { ingest, isVideoDocument } from "../src/lib/telegram-reader";
 import { resolveWorkerHealth, WORKER_HEARTBEAT_STALE_AFTER_MS } from "../src/lib/worker-health";
-import { normalizeRouteContentSettings, routeAllowsMedia } from "../src/lib/route-content";
+import { normalizeRouteContentSettings, routeAllowsMedia, isRouteMessageExcluded } from "../src/lib/route-content";
 import { Api } from "teleproto";
 
 const source: Channel = {
@@ -362,6 +362,15 @@ test("route media switches allow each Telegram media kind independently", () => 
     showImages: false, showVideos: false, showFiles: false,
   })));
 });
+test("route exclusions match only a normalized full message on that route", () => {
+  const excludedRoute = normalizeRouteContentSettings({ excludedTexts: ["  555 ", "صباح   الخير", "555", ""] });
+  const otherRoute = normalizeRouteContentSettings({});
+  assert.deepEqual(excludedRoute.excludedTexts, ["555", "صباح الخير"]);
+  assert(isRouteMessageExcluded("555", excludedRoute));
+  assert(isRouteMessageExcluded(" صباح الخير \n", excludedRoute));
+  assert(!isRouteMessageExcluded("صباح الخير يا جماعة", excludedRoute));
+  assert(!isRouteMessageExcluded("555", otherRoute));
+});
 test("link removal preserves destination signature text without its URL", async () => {
   const composed = await compose(
     {
@@ -593,7 +602,7 @@ test("editing a source replaces only its selected destinations and rolls back in
         destinationId: -destinationId,
         contentSettings: {
           showText: false, showImages: true, showVideos: false, showFiles: false,
-          showLinks: false, showMarketPrices: true, showSignature: true,
+          showLinks: false, showMarketPrices: true, showSignature: true, excludedTexts: ["555", "صباح الخير"],
         },
       },
     ]);
@@ -613,7 +622,7 @@ test("editing a source replaces only its selected destinations and rolls back in
         destinationId, hideSourceLink: true,
         contentSettings: {
           showText: false, showImages: true, showVideos: false, showFiles: false,
-          showLinks: false, showMarketPrices: true, showSignature: true,
+          showLinks: false, showMarketPrices: true, showSignature: true, excludedTexts: ["555", "صباح الخير"],
         },
       },
     ]);

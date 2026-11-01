@@ -421,7 +421,7 @@ components:
         contentSettings: { $ref: '#/components/schemas/RouteContentSettings' }
     RouteContentSettings:
       type: object
-      required: [showText, showImages, showVideos, showFiles, showLinks, showMarketPrices, showSignature]
+      required: [showText, showImages, showVideos, showFiles, showLinks, showMarketPrices, showSignature, excludedTexts]
       properties:
         showText: { type: boolean }
         showImages: { type: boolean }
@@ -430,6 +430,10 @@ components:
         showLinks: { type: boolean }
         showMarketPrices: { type: boolean }
         showSignature: { type: boolean }
+        excludedTexts:
+          type: array
+          maxItems: 20
+          items: { type: string, maxLength: 200 }
     RouteSettingsInput:
       type: object
       required: [destinationId, contentSettings]

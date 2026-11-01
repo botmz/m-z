@@ -14,6 +14,7 @@ async function fixture(text: string, run: (f: {
   id: number;
   enableFilter: () => Promise<unknown>;
   savePlan: (parts: string[], sentIds?: number[], translated?: boolean) => Promise<unknown>;
+  excludeTexts: (texts: string[]) => Promise<unknown>;
   state: () => Promise<Record<string, any>>;
 }) => Promise<void>, entities: unknown[] = []) {
   const suffix = `${process.pid}_${Date.now()}_${++sequence}`;
@@ -60,6 +61,11 @@ async function fixture(text: string, run: (f: {
         }))), JSON.stringify(sentIds), sentIds.length ? "retrying" : "pending",
         translated ? "translated" : "not_requested"],
       ),
+      excludeTexts: (texts) => pool.query(
+        `UPDATE routing_rules SET content_settings=COALESCE(content_settings,'{}'::jsonb) || jsonb_build_object('excludedTexts',$3::jsonb)
+         WHERE source_id=$1 AND destination_id=$2`,
+        [sourceId, destinationId, JSON.stringify(texts)],
+      ),
       state: async () => (await pool.query("SELECT * FROM message_deliveries WHERE id=$1", [id])).rows[0],
     });
   } finally {
@@ -84,6 +90,18 @@ test("enabling link removal skips an already queued URL-only message without a B
     const attempts = await pool.query("SELECT status,detail FROM delivery_attempts WHERE delivery_id=$1 AND status='skipped'", [f.id]);
     assert.equal(attempts.rowCount, 1);
     assert.match(attempts.rows[0].detail, /لا يوجد نص/);
+  });
+});
+
+test("an excluded full source text skips its queued delivery without sending prices or a signature", async () => {
+  await fixture("صباح الخير", async f => {
+    await f.excludeTexts(["صباح الخير"]);
+    await processDelivery(f.id, { api: noSend, workerEnabled });
+    const state = await f.state();
+    assert.equal(state.status, "skipped");
+    assert.match(state.error, /مستثنى/);
+    assert.deepEqual(state.telegram_message_ids, []);
+    assert.equal(state.send_plan, null);
   });
 });
 

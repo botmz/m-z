@@ -10,7 +10,7 @@ import { readerState, readerStatus, beginQr, qrState, submitQrPassword } from ".
 import { control, getWorkerHealth } from "../../lib/worker";
 import { marketQuotes, refreshPrices } from "../../lib/market";
 import { compose } from "../../lib/composition";
-import { normalizeRouteContentSettings } from "../../lib/route-content";
+import { normalizeRouteContentSettings, isRouteMessageExcluded } from "../../lib/route-content";
 import { sendManualMessage } from "../../lib/telegram-manual-send";
 import { createTelegramQrRouter } from "./telegram-qr";
 
@@ -89,6 +89,10 @@ operationsRouter.post("/preview", async (req, res) => {
   const routes = await pool.query(`SELECT hide_source_link,content_settings FROM routing_rules
     WHERE source_id=$1 AND destination_id=$2`, [source.id, -destination.id]);
   const routeContent = normalizeRouteContentSettings(routes.rows[0]?.content_settings, !source.skipMessagesWithLinks);
+  if (isRouteMessageExcluded(input.text, routeContent)) {
+    res.json(PreviewMessageResponse.parse({ text: "", html: "", warnings: ["هذا النص الكامل مستثنى لهذا المسار ولن يُرسل."] }));
+    return;
+  }
   const preview = await compose(source, destination, input.text, undefined, [], Boolean(routes.rows[0]?.hide_source_link), routeContent);
   if (!preview.text.trim()) preview.warnings.push("لا تحتوي معاينة النص على محتوى؛ قد يُرسل وسيط فقط إذا كان مسموحاً في هذا المسار.");
   if (!routes.rows.length) preview.warnings.push("لا يوجد توجيه تلقائي محفوظ بين المصدر والوجهة؛ الإرسال اليدوي من هذه الصفحة يرسل هذه الرسالة فقط.");
@@ -115,6 +119,10 @@ operationsRouter.post("/preview/send", async (req, res): Promise<void> => {
 
   const route = await pool.query("SELECT hide_source_link,content_settings FROM routing_rules WHERE source_id=$1 AND destination_id=$2", [source.id, -destination.id]);
   const routeContent = normalizeRouteContentSettings(route.rows[0]?.content_settings, !source.skipMessagesWithLinks);
+  if (isRouteMessageExcluded(input.text, routeContent)) {
+    res.json(SendPreviewMessageResponse.parse({ ok: false, message: "هذا النص الكامل مستثنى لهذا المسار ولن يُرسل." }));
+    return;
+  }
   const composed = await compose(source, destination, input.text, undefined, [], Boolean(route.rows[0]?.hide_source_link), routeContent);
   if (!composed.text.trim()) {
     res.status(400).json({ error: "لا يوجد محتوى مفعّل لهذا المسار؛ فعّل النص أو الأسعار أو التوقيع قبل الإرسال." });
