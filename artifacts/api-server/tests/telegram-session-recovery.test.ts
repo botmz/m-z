@@ -73,6 +73,71 @@ test("missing saved session reports a safe not-authorized status without creatin
   assert.equal(errors.length, 0);
 });
 
+test("a saved-session database read failure is safe and a later retry restores the reader", async () => {
+  const previousSecret = process.env.SESSION_SECRET;
+  process.env.SESSION_SECRET = testSecret;
+  try {
+    const plaintextSession = secret;
+    const encryptedSession = encrypt(plaintextSession);
+    const privateDatabaseError = `database read failed: ${plaintextSession} ${encryptedSession}`;
+    const state = { status: "connected", detail: "old state", checkedAt: null as string | null };
+    const errors: string[] = [];
+    let loadCount = 0;
+    let createCount = 0;
+    let createdSession: string | undefined;
+    let authorized = false;
+    let attached = false;
+
+    const recover = () => recoverTelegramReaderSession({
+      loadEncryptedSession: async () => {
+        loadCount++;
+        if (loadCount === 1) throw new Error(privateDatabaseError);
+        return encryptedSession;
+      },
+      decryptSession: decrypt,
+      createClient: session => {
+        createCount++;
+        createdSession = session;
+        return {
+          connect: async () => {},
+          isUserAuthorized: async () => {
+            authorized = true;
+            return true;
+          },
+        };
+      },
+      attachHandlers: () => { attached = true; },
+      state,
+      reportError: async message => { errors.push(message); },
+    });
+
+    const failedClient = await recover();
+    assert.equal(failedClient, undefined);
+    assert.equal(state.status, "disconnected");
+    assert.match(state.detail, /تعذر تحميل جلسة Telegram/);
+    assert.deepEqual(errors, [state.detail]);
+    assert.equal(createCount, 0);
+
+    const recoveredClient = await recover();
+    assert(recoveredClient);
+    assert.equal(state.status, "connected");
+    assert.equal(state.detail, "جلسة MTProto مفوضة ومتصلة");
+    assert.equal(createdSession, plaintextSession);
+    assert.equal(authorized, true);
+    assert.equal(attached, true);
+    assert.equal(loadCount, 2);
+    assert.equal(createCount, 1);
+
+    const output = JSON.stringify({ state, errors });
+    assert(!output.includes(plaintextSession));
+    assert(!output.includes(encryptedSession));
+    assert(!output.includes(privateDatabaseError));
+  } finally {
+    if (previousSecret === undefined) delete process.env.SESSION_SECRET;
+    else process.env.SESSION_SECRET = previousSecret;
+  }
+});
+
 test("unusable saved sessions request QR reauthorization without exposing session data", async () => {
   const previousSecret = process.env.SESSION_SECRET;
   process.env.SESSION_SECRET = testSecret;
