@@ -1,7 +1,7 @@
 # Written by blitz.cloud for this project. It is yours now: blitz.cloud
 # builds from it as it is, and you can change it like any other file.
 ########## Build stage ##########
-FROM node:22-alpine AS builder
+FROM node:22-bookworm-slim AS builder
 WORKDIR /app
 
 RUN npm install -g pnpm@10.26.1
@@ -17,9 +17,11 @@ RUN pnpm --filter @workspace/mz-telegram build
 RUN pnpm --filter @workspace/api-server build
 
 ########## Final stage ##########
-FROM node:22-alpine
+FROM node:22-bookworm-slim
 
-RUN apk add --no-cache nginx
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends nginx \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY --from=builder /app /app
