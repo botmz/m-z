@@ -1,0 +1,38 @@
+name: Verify Blitz image
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the requested source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Validate every project package manifest
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const { execFileSync } = require("node:child_process");
+          const files = execFileSync("git", ["ls-files", "-z"], { encoding: "utf8" })
+            .split("\0").filter(file => /(^|\/)package\.json$/.test(file));
+          for (const file of files) {
+            JSON.parse(fs.readFileSync(file, "utf8"));
+            console.log(`Valid JSON: ${file}`);
+          }
+          const manifest = JSON.parse(fs.readFileSync("package.json", "utf8"));
+          const dockerfile = fs.readFileSync("Dockerfile", "utf8");
+          const pinned = dockerfile.match(/pnpm@(\d+\.\d+\.\d+)/)?.[1];
+          if (`pnpm@${pinned}` !== manifest.packageManager) {
+            throw new Error("Dockerfile pnpm version differs from packageManager");
+          }
+          console.log(`Validated ${files.length} manifests and ${manifest.packageManager}`);
+          NODE
+      - name: Build the same Dockerfile used by Blitz
+        run: docker build --progress=plain --tag mz-telegram-build-check .
+      - name: Check the compiled API entrypoint
+        run: docker run --rm --entrypoint node mz-telegram-build-check --check /app/artifacts/api-server/dist/index.mjs
