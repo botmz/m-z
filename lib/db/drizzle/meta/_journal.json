@@ -15,6 +15,20 @@
       "when": 1793208924955,
       "tag": "0001_overrated_randall",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793721043602,
+      "tag": "0002_skinny_slipstream",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793721370303,
+      "tag": "0003_damp_iron_man",
+      "breakpoints": true
     }
   ]
 }

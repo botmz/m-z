@@ -10,6 +10,20 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: mz_startup_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d mz_startup_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - name: Check out the requested source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -36,3 +50,51 @@ jobs:
         run: docker build --progress=plain --tag mz-telegram-build-check .
       - name: Check the compiled API entrypoint
         run: docker run --rm --entrypoint node mz-telegram-build-check --check /app/artifacts/api-server/dist/index.mjs
+      - name: Verify migrations, admin initialization, and repeat startup
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/mz_startup_test
+          SESSION_SECRET: ci-only-session-secret-with-at-least-32-characters
+          ADMIN_INITIAL_PASSWORD: ci-only-owner-password-for-startup-test
+        run: |
+          set -euo pipefail
+          docker run --detach --name mz-migration-smoke --network host \
+            --env DATABASE_URL --env SESSION_SECRET --env ADMIN_INITIAL_PASSWORD \
+            mz-telegram-build-check
+
+          cleanup() { docker rm --force mz-migration-smoke >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+
+          wait_for_api() {
+            for attempt in $(seq 1 45); do
+              if curl --fail --silent http://127.0.0.1:8080/api/healthz >/dev/null; then
+                return 0
+              fi
+              sleep 2
+            done
+            docker logs mz-migration-smoke
+            return 1
+          }
+
+          check_admin_initialized() {
+            curl --fail --silent http://127.0.0.1:8080/api/mz/auth |
+              node -e 'let body=""; process.stdin.on("data", chunk => body += chunk); process.stdin.on("end", () => { const auth = JSON.parse(body); if (auth.configured !== true || auth.authenticated !== false) process.exit(1); });'
+          }
+
+          wait_for_api
+          check_admin_initialized
+
+          table_count=$(docker run --rm --network host --env PGPASSWORD=postgres postgres:16-alpine \
+            psql -h 127.0.0.1 -U postgres -d mz_startup_test -Atc \
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name = ANY(ARRAY['admin_settings','admin_sessions','audit_logs','source_channels','destination_channels','routing_rules','messages','message_deliveries','delivery_attempts','app_settings','market_prices','message_translations','message_album_items'])")
+          test "$table_count" = "13"
+
+          migration_count=$(docker run --rm --network host --env PGPASSWORD=postgres postgres:16-alpine \
+            psql -h 127.0.0.1 -U postgres -d mz_startup_test -Atc \
+            "SELECT count(*) FROM drizzle.__drizzle_migrations")
+          expected_migrations=$(node -p 'JSON.parse(require("node:fs").readFileSync("lib/db/drizzle/meta/_journal.json","utf8")).entries.length')
+          test "$migration_count" = "$expected_migrations"
+
+          docker restart mz-migration-smoke >/dev/null
+          wait_for_api
+          check_admin_initialized
+          echo "Fresh database migration, admin initialization, and restart recovery passed."

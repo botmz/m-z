@@ -1,0 +1,1 @@
+ALTER TABLE "message_deliveries" ADD COLUMN IF NOT EXISTS "sent_part_count" integer DEFAULT 0 NOT NULL;
